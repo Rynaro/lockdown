@@ -1,0 +1,130 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Verify version matches manifest
+        run: |
+          MANIFEST_VERSION=$(cat manifest.json | grep '"version"' | cut -d'"' -f4)
+          if [ "${{ steps.version.outputs.VERSION }}" != "$MANIFEST_VERSION" ]; then
+            echo "❌ Tag version (${{ steps.version.outputs.VERSION }}) doesn't match manifest.json ($MANIFEST_VERSION)"
+            exit 1
+          fi
+          echo "✅ Version check passed: $MANIFEST_VERSION"
+
+      - name: Create release package
+        run: |
+          mkdir -p lockdown
+          cp main.js manifest.json styles.css lockdown/
+          zip -r lockdown-${{ steps.version.outputs.VERSION }}.zip lockdown/
+          
+          # Also create a zip of just the files for BRAT compatibility
+          cd lockdown
+          zip -r ../lockdown-${{ steps.version.outputs.VERSION }}-files.zip .
+          cd ..
+
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          
+          # Try to extract changelog for this version
+          if [ -f CHANGELOG.md ]; then
+            # Extract content between version headers
+            CHANGELOG=$(sed -n "/## \[$VERSION\]/,/## \[/p" CHANGELOG.md | sed '1d;$d' | sed '/^$/d')
+            
+            if [ -z "$CHANGELOG" ]; then
+              # Try without brackets
+              CHANGELOG=$(sed -n "/## $VERSION/,/## /p" CHANGELOG.md | sed '1d;$d' | sed '/^$/d')
+            fi
+            
+            if [ -z "$CHANGELOG" ]; then
+              CHANGELOG="See [CHANGELOG.md](CHANGELOG.md) for details."
+            fi
+          else
+            CHANGELOG="Release version $VERSION"
+          fi
+          
+          # Write to output with multiline support
+          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Lockdown v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## 🔒 Lockdown v${{ steps.version.outputs.VERSION }}
+            
+            ${{ steps.changelog.outputs.NOTES }}
+            
+            ---
+            
+            ### 📦 Manual Installation
+            
+            1. Download `lockdown-${{ steps.version.outputs.VERSION }}.zip`
+            2. Extract the zip file
+            3. Copy the `lockdown` folder to your vault's `.obsidian/plugins/` directory
+            4. Reload Obsidian
+            5. Enable the plugin in Settings → Community Plugins
+            
+            ### 🔧 Alternative Installation
+            
+            Download `lockdown-${{ steps.version.outputs.VERSION }}-files.zip` and extract the three files directly into `.obsidian/plugins/lockdown/`
+            
+            ---
+            
+            **Full Changelog**: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+          files: |
+            lockdown-${{ steps.version.outputs.VERSION }}.zip
+            lockdown-${{ steps.version.outputs.VERSION }}-files.zip
+            main.js
+            manifest.json
+            styles.css
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build summary
+        run: |
+          echo "### 🎉 Release Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Plugin:** Lockdown" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ GitHub Release created successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View Release](https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
