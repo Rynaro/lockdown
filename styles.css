@@ -1,0 +1,654 @@
+/* Lockdown Plugin Styles */
+
+.lockdown-locked {
+	opacity: 0.7;
+	pointer-events: none;
+}
+
+.lockdown-status-bar {
+	cursor: pointer;
+	padding: 2px 8px;
+	border-radius: 4px;
+	transition: background-color 0.2s;
+}
+
+.lockdown-status-bar:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* ===== MODAL STYLES ===== */
+
+/* Base Modal Styles */
+.lockdown-modal {
+	padding: 24px;
+	min-width: 400px;
+}
+
+/* Modal Title Container */
+.lockdown-modal-title-container {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 20px;
+	padding-bottom: 16px;
+	border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.lockdown-modal-icon {
+	font-size: 32px;
+	line-height: 1;
+	animation: lockdown-icon-glow 2s ease-in-out infinite;
+}
+
+@keyframes lockdown-icon-glow {
+	0%, 100% {
+		opacity: 1;
+		filter: drop-shadow(0 0 4px rgba(128, 128, 128, 0.3));
+	}
+	50% {
+		opacity: 0.85;
+		filter: drop-shadow(0 0 8px rgba(128, 128, 128, 0.5));
+	}
+}
+
+.lockdown-modal-title {
+	margin: 0;
+	font-size: 24px;
+	font-weight: 600;
+	color: var(--text-normal);
+	letter-spacing: -0.02em;
+}
+
+.lockdown-modal-message {
+	margin: 0 0 24px 0;
+	font-size: 15px;
+	line-height: 1.5;
+	color: var(--text-muted);
+}
+
+/* Input Styles */
+.lockdown-input-container {
+	margin-bottom: 20px;
+}
+
+.lockdown-input-label {
+	display: block;
+	margin-bottom: 8px;
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--text-normal);
+	letter-spacing: 0.01em;
+}
+
+.lockdown-password-input {
+	width: 100%;
+	padding: 12px 16px;
+	border: 2px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 15px;
+	font-family: inherit;
+	transition: all 0.2s ease;
+}
+
+.lockdown-password-input:hover {
+	border-color: var(--background-modifier-border-hover);
+}
+
+.lockdown-password-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 3px rgba(var(--interactive-accent-rgb), 0.1);
+	background-color: var(--background-primary-alt);
+}
+
+.lockdown-password-input::placeholder {
+	color: var(--text-faint);
+	opacity: 0.6;
+}
+
+/* Button Container */
+.lockdown-modal-button-container {
+	display: flex;
+	gap: 12px;
+	justify-content: flex-end;
+	margin-top: 24px;
+	padding-top: 20px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Button Styles */
+.lockdown-modal-button {
+	padding: 10px 24px;
+	border: none;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	letter-spacing: 0.02em;
+}
+
+.lockdown-modal-button:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.lockdown-modal-button:active {
+	transform: translateY(0);
+}
+
+.lockdown-modal-button-primary {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.lockdown-modal-button-primary:hover {
+	background-color: var(--interactive-accent-hover);
+	box-shadow: 0 4px 16px rgba(var(--interactive-accent-rgb), 0.3);
+}
+
+.lockdown-modal-button-secondary {
+	background-color: var(--background-secondary);
+	color: var(--text-normal);
+	border: 2px solid var(--background-modifier-border);
+}
+
+.lockdown-modal-button-secondary:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border-hover);
+}
+
+.lockdown-modal-button-warning {
+	background-color: #e74c3c;
+	color: white;
+}
+
+.lockdown-modal-button-warning:hover {
+	background-color: #c0392b;
+	box-shadow: 0 4px 16px rgba(231, 76, 60, 0.3);
+}
+
+/* Empty State */
+.lockdown-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 60px 40px;
+	text-align: center;
+}
+
+.lockdown-empty-state-icon {
+	font-size: 80px;
+	line-height: 1;
+	margin-bottom: 20px;
+	opacity: 0.5;
+	animation: lockdown-empty-bounce 2s ease-in-out infinite;
+}
+
+@keyframes lockdown-empty-bounce {
+	0%, 100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-10px);
+	}
+}
+
+.lockdown-empty-state-message {
+	margin: 0;
+	font-size: 16px;
+	color: var(--text-muted);
+}
+
+/* Password Modal Specific */
+.lockdown-password-modal {
+	min-width: 450px;
+}
+
+/* Lock Overlay Styles */
+.lockdown-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	width: 100%;
+	height: 100%;
+	background-color: var(--background-primary);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+	gap: 24px;
+	padding: 40px;
+	animation: lockdown-fade-in 0.3s ease-in-out;
+	box-sizing: border-box;
+	overflow: hidden;
+	pointer-events: auto;
+	/* Create a new stacking context to prevent affecting other elements */
+	isolation: isolate;
+	/* Don't use backdrop-filter as it can affect other UI elements */
+	/* Use opacity on background instead */
+	opacity: 0.98;
+	/* Ensure overlay stays within its container */
+	contain: layout style paint;
+}
+
+@keyframes lockdown-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 0.98;
+	}
+}
+
+/* Ensure sidebar and other UI elements are not affected by overlay */
+.workspace-split.mod-left-split,
+.workspace-split.mod-right-split,
+.workspace-ribbon,
+.status-bar,
+.notice-container,
+.modal-container,
+.prompt-container,
+.popover {
+	/* Create independent stacking contexts to prevent overlay bleed */
+	isolation: isolate;
+	/* Ensure these elements are above the overlay's stacking context */
+	z-index: auto;
+	/* Reset any transforms that might be affected */
+	transform: none;
+	/* Ensure proper rendering */
+	will-change: auto;
+}
+
+/* Specifically protect the sidebar from white overlay issues */
+.nav-files-container,
+.workspace-leaf-content,
+.workspace-tab-header-container {
+	/* Prevent overlay effects from bleeding into sidebar */
+	isolation: isolate;
+	/* Ensure proper background rendering */
+	background-color: var(--background-primary);
+	/* Force GPU rendering to prevent visual glitches */
+	transform: translateZ(0);
+	-webkit-transform: translateZ(0);
+}
+
+.lockdown-overlay-icon {
+	font-size: 120px;
+	line-height: 1;
+	opacity: 0.9;
+	animation: lockdown-pulse 2s ease-in-out infinite;
+	filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+@keyframes lockdown-pulse {
+	0%, 100% {
+		transform: scale(1);
+		opacity: 0.9;
+	}
+	50% {
+		transform: scale(1.05);
+		opacity: 1;
+	}
+}
+
+.lockdown-overlay-message {
+	font-size: 24px;
+	font-weight: 600;
+	color: var(--text-normal);
+	text-align: center;
+	margin: 0;
+	opacity: 0.95;
+	letter-spacing: 0.5px;
+}
+
+.lockdown-overlay-button {
+	padding: 12px 32px;
+	font-size: 16px;
+	font-weight: 600;
+	border-radius: 8px;
+	border: none;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	transition: all 0.2s ease;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.lockdown-overlay-button:hover {
+	background-color: var(--interactive-accent-hover);
+	transform: translateY(-2px);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.lockdown-overlay-button:active {
+	transform: translateY(0);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* File Explorer Indicators */
+.lockdown-file-indicator,
+.lockdown-folder-indicator {
+	margin-left: 4px;
+	opacity: 0.7;
+	font-size: 0.9em;
+	vertical-align: middle;
+	cursor: help;
+	/* Prevent indicators from affecting parent element styling */
+	display: inline-block;
+	/* CRITICAL: Don't capture pointer events - let them pass through to parent */
+	pointer-events: none;
+	/* Ensure indicators don't interfere with hover states */
+	will-change: opacity;
+	transition: opacity 0.15s ease;
+	/* Completely isolate from parent styling */
+	position: relative;
+	z-index: 0;
+	/* Prevent any background inheritance */
+	background: transparent !important;
+	background-color: transparent !important;
+	/* Prevent affecting parent background */
+	mix-blend-mode: normal;
+	/* Don't contain - let parent handle layout */
+	contain: none;
+}
+
+/* Only allow pointer events on the indicator itself for tooltip, not for hover */
+.lockdown-file-indicator:hover,
+.lockdown-folder-indicator:hover {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.lockdown-folder-indicator {
+	opacity: 0.8;
+}
+
+/* Ensure indicators don't affect sidebar background or any parent elements */
+.nav-files-container .lockdown-file-indicator,
+.nav-files-container .lockdown-folder-indicator,
+.nav-folder-title .lockdown-folder-indicator,
+.nav-file-title .lockdown-file-indicator {
+	/* Force transparent background to prevent white sidebar */
+	background: transparent !important;
+	background-color: transparent !important;
+	/* Prevent affecting parent element backgrounds */
+	mix-blend-mode: normal;
+	/* Don't contain - this was causing hover state issues */
+	contain: none;
+	/* Ensure indicators don't interfere with parent hover states */
+	pointer-events: none;
+}
+
+.nav-folder-title .lockdown-folder-indicator {
+	opacity: 0.8;
+}
+
+/* Ensure indicators don't create any overlays or tints */
+.nav-files-container::before,
+.nav-files-container::after,
+.nav-folder-title::before,
+.nav-folder-title::after,
+.nav-file-title::before,
+.nav-file-title::after {
+	content: none !important;
+}
+
+/* Locked Files Manager Modal */
+.lockdown-manager-modal {
+	min-width: 600px;
+	max-width: 800px;
+}
+
+.lockdown-search-container {
+	margin-bottom: 20px;
+	display: flex;
+	gap: 8px;
+}
+
+.lockdown-tabs {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 20px;
+	padding: 4px;
+	background-color: var(--background-secondary);
+	border-radius: 8px;
+}
+
+.lockdown-tab {
+	flex: 1;
+	padding: 10px 16px;
+	border: none;
+	border-radius: 6px;
+	background-color: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 0.2s ease;
+	font-weight: 500;
+	font-size: 14px;
+}
+
+.lockdown-tab:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.lockdown-tab.active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.lockdown-search-input {
+	width: 100%;
+	padding: 12px 16px;
+	border: 2px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 14px;
+	transition: all 0.2s ease;
+}
+
+.lockdown-search-input:hover {
+	border-color: var(--background-modifier-border-hover);
+}
+
+.lockdown-search-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 3px rgba(var(--interactive-accent-rgb), 0.1);
+	background-color: var(--background-primary-alt);
+}
+
+.lockdown-search-input::placeholder {
+	color: var(--text-faint);
+	opacity: 0.6;
+}
+
+.lockdown-files-list {
+	max-height: 450px;
+	overflow-y: auto;
+	margin-bottom: 20px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+/* Custom scrollbar for files list */
+.lockdown-files-list::-webkit-scrollbar {
+	width: 8px;
+}
+
+.lockdown-files-list::-webkit-scrollbar-track {
+	background: var(--background-secondary);
+	border-radius: 4px;
+}
+
+.lockdown-files-list::-webkit-scrollbar-thumb {
+	background: var(--background-modifier-border);
+	border-radius: 4px;
+}
+
+.lockdown-files-list::-webkit-scrollbar-thumb:hover {
+	background: var(--background-modifier-border-hover);
+}
+
+.lockdown-file-item {
+	display: flex;
+	align-items: center;
+	padding: 16px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	gap: 16px;
+	transition: all 0.2s ease;
+}
+
+.lockdown-file-item:last-child {
+	border-bottom: none;
+}
+
+.lockdown-file-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.lockdown-file-name {
+	font-weight: 600;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-normal);
+}
+
+.lockdown-file-path {
+	font-size: 12px;
+	color: var(--text-muted);
+	flex: 2;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--font-monospace);
+	opacity: 0.8;
+}
+
+.lockdown-file-status {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	font-size: 1.3em;
+}
+
+.lockdown-file-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.lockdown-file-actions button {
+	padding: 6px 16px;
+	font-size: 13px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background-color: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: all 0.2s ease;
+	font-weight: 500;
+}
+
+.lockdown-file-actions button:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border-hover);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.lockdown-file-actions button.mod-cta {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.lockdown-file-actions button.mod-cta:hover {
+	background-color: var(--interactive-accent-hover);
+	box-shadow: 0 2px 12px rgba(var(--interactive-accent-rgb), 0.3);
+}
+
+.lockdown-bulk-actions {
+	margin-top: 20px;
+	padding-top: 20px;
+	border-top: 2px solid var(--background-modifier-border);
+	display: flex;
+	justify-content: flex-end;
+}
+
+/* Password Strength Indicator */
+.lockdown-password-strength-container {
+	margin-top: 12px;
+}
+
+.lockdown-password-strength-bar-container {
+	height: 6px;
+	background-color: var(--background-modifier-border);
+	border-radius: 3px;
+	overflow: hidden;
+	margin-bottom: 8px;
+}
+
+.lockdown-password-strength-meter {
+	height: 100%;
+	border-radius: 3px;
+	transition: width 0.4s ease, background-color 0.3s ease;
+	width: 0%;
+	box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
+}
+
+.lockdown-password-strength-meter.strength-weak {
+	background: linear-gradient(90deg, #e74c3c 0%, #c0392b 100%);
+	box-shadow: 0 0 12px rgba(231, 76, 60, 0.4);
+}
+
+.lockdown-password-strength-meter.strength-fair {
+	background: linear-gradient(90deg, #f39c12 0%, #e67e22 100%);
+	box-shadow: 0 0 12px rgba(243, 156, 18, 0.4);
+}
+
+.lockdown-password-strength-meter.strength-good {
+	background: linear-gradient(90deg, #3498db 0%, #2980b9 100%);
+	box-shadow: 0 0 12px rgba(52, 152, 219, 0.4);
+}
+
+.lockdown-password-strength-meter.strength-strong {
+	background: linear-gradient(90deg, #2ecc71 0%, #27ae60 100%);
+	box-shadow: 0 0 12px rgba(46, 204, 113, 0.4);
+}
+
+.lockdown-password-strength-text {
+	font-size: 13px;
+	font-weight: 500;
+	margin-top: 4px;
+	transition: color 0.3s ease;
+	letter-spacing: 0.01em;
+}
+
+.lockdown-password-strength-text.strength-weak {
+	color: #e74c3c;
+}
+
+.lockdown-password-strength-text.strength-fair {
+	color: #f39c12;
+}
+
+.lockdown-password-strength-text.strength-good {
+	color: #3498db;
+}
+
+.lockdown-password-strength-text.strength-strong {
+	color: #2ecc71;
+}
