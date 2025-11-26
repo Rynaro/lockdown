@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/Rynaro/lockdown/discussions
+    about: Ask questions, share ideas, or discuss features
+  - name: 📖 Documentation
+    url: https://github.com/Rynaro/lockdown#readme
+    about: Check the README for usage instructions
