@@ -1,0 +1,54 @@
+{
+	"root": true,
+	"parser": "@typescript-eslint/parser",
+	"env": { "node": true },
+	"plugins": [
+		"@typescript-eslint"
+	],
+	"extends": [
+		"eslint:recommended",
+		"plugin:@typescript-eslint/eslint-recommended",
+		"plugin:@typescript-eslint/recommended"
+	],
+	"parserOptions": {
+		"sourceType": "module",
+		"ecmaVersion": 2020
+	},
+	"rules": {
+		"no-unused-vars": "off",
+		"@typescript-eslint/no-unused-vars": ["error", { "args": "none" }],
+		"@typescript-eslint/ban-ts-comment": "off",
+		"no-prototype-builtins": "off",
+		"@typescript-eslint/no-empty-function": "off",
+		"@typescript-eslint/no-explicit-any": "warn",
+		"no-restricted-imports": [
+			"error",
+			{
+				"patterns": [
+					{
+						"group": ["obsidian", "**/infrastructure/**", "**/application/**", "**/ui/**"],
+						"message": "Core domain layer must not depend on external frameworks or upper layers"
+					}
+				]
+			}
+		]
+	},
+	"overrides": [
+		{
+			"files": ["src/core/**/*.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"group": ["obsidian", "**/infrastructure/**", "**/application/**", "**/ui/**", "../infrastructure/**", "../application/**", "../ui/**", "../../infrastructure/**", "../../application/**", "../../ui/**"],
+								"message": "Core domain layer must not import from infrastructure, application, ui, or Obsidian"
+							}
+						]
+					}
+				]
+			}
+		}
+	]
+}
