@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   quality-gate:
     name: Quality Gate
@@ -114,6 +119,7 @@ jobs:
 
       - name: Comment PR summary
         if: always()
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
