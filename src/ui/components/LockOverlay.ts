@@ -19,19 +19,19 @@ export class LockOverlay {
 		}
 
 		const overlay = document.createElement('div');
-		overlay.className = 'lockdown-overlay';
+		overlay.className = 'ld-overlay';
 		overlay.setAttribute('data-file-path', filePath);
 
 		const lockIconEl = document.createElement('div');
-		lockIconEl.className = 'lockdown-overlay-icon';
+		lockIconEl.className = 'ld-overlay__icon';
 		lockIconEl.textContent = lockIcon || '🔒';
 
 		const message = document.createElement('div');
-		message.className = 'lockdown-overlay-message';
+		message.className = 'ld-overlay__message';
 		message.textContent = 'This note is locked';
 
 		const unlockButton = document.createElement('button');
-		unlockButton.className = 'lockdown-overlay-button';
+		unlockButton.className = 'ld-overlay__button';
 		unlockButton.textContent = 'Unlock';
 		unlockButton.onclick = async () => {
 			await onUnlock();
