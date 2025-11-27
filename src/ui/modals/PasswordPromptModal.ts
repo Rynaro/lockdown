@@ -28,31 +28,31 @@ export class PasswordPromptModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.contentEl.addClass('lockdown-modal', 'lockdown-password-modal');
+		this.contentEl.addClass('ld-modal', 'ld-modal--password');
 
-		const titleContainer = this.contentEl.createDiv({ cls: 'lockdown-modal-title-container' });
-		titleContainer.createSpan({ text: '🔐', cls: 'lockdown-modal-icon' });
-		titleContainer.createEl('h2', { text: 'Password Required', cls: 'lockdown-modal-title' });
+		const titleContainer = this.contentEl.createDiv({ cls: 'ld-modal__title-container' });
+		titleContainer.createSpan({ text: '🔐', cls: 'ld-modal__icon' });
+		titleContainer.createEl('h2', { text: 'Password Required', cls: 'ld-modal__title' });
 
-		this.contentEl.createEl('p', { text: this.message, cls: 'lockdown-modal-message' });
+		this.contentEl.createEl('p', { text: this.message, cls: 'ld-modal__message' });
 
-		const passwordContainer = this.contentEl.createDiv({ cls: 'lockdown-input-container' });
+		const passwordContainer = this.contentEl.createDiv({ cls: 'ld-input-container' });
 		passwordContainer.createEl('label', {
 			text: 'Password',
 			attr: { for: 'lockdown-password' },
-			cls: 'lockdown-input-label'
+			cls: 'ld-input__label'
 		});
 		this.passwordInput = passwordContainer.createEl('input', {
 			type: 'password',
 			attr: { id: 'lockdown-password', placeholder: 'Enter your password' },
-			cls: 'lockdown-password-input'
+			cls: 'ld-input ld-input--password'
 		});
 
 		if (this.isNewPassword) {
-			const strengthContainer = passwordContainer.createDiv({ cls: 'lockdown-password-strength-container' });
-			const strengthBarContainer = strengthContainer.createDiv({ cls: 'lockdown-password-strength-bar-container' });
-			this.strengthMeter = strengthBarContainer.createDiv({ cls: 'lockdown-password-strength-meter' });
-			this.strengthText = strengthContainer.createDiv({ cls: 'lockdown-password-strength-text' });
+			const strengthContainer = passwordContainer.createDiv({ cls: 'ld-password-strength' });
+			const strengthBarContainer = strengthContainer.createDiv({ cls: 'ld-password-strength__bar-container' });
+			this.strengthMeter = strengthBarContainer.createDiv({ cls: 'ld-password-strength__meter' });
+			this.strengthText = strengthContainer.createDiv({ cls: 'ld-password-strength__text' });
 
 			this.passwordInput.oninput = () => {
 				const password = this.passwordInput.value;
@@ -62,23 +62,23 @@ export class PasswordPromptModal extends Modal {
 		}
 
 		if (this.isNewPassword) {
-			const confirmContainer = this.contentEl.createDiv({ cls: 'lockdown-input-container' });
+			const confirmContainer = this.contentEl.createDiv({ cls: 'ld-input-container' });
 			confirmContainer.createEl('label', {
 				text: 'Confirm Password',
 				attr: { for: 'lockdown-confirm' },
-				cls: 'lockdown-input-label'
+				cls: 'ld-input__label'
 			});
 			this.confirmInput = confirmContainer.createEl('input', {
 				type: 'password',
 				attr: { id: 'lockdown-confirm', placeholder: 'Re-enter your password' },
-				cls: 'lockdown-password-input'
+				cls: 'ld-input ld-input--password'
 			});
 		}
 
-		this.contentEl.createDiv({ cls: 'lockdown-modal-button-container' }, (container) => {
+		this.contentEl.createDiv({ cls: 'ld-modal__button-container' }, (container) => {
 			const cancelBtn = container.createEl('button', {
 				text: 'Cancel',
-				cls: 'lockdown-modal-button lockdown-modal-button-secondary'
+				cls: 'ld-button ld-button--secondary'
 			});
 			cancelBtn.onClickEvent(() => {
 				this.resolver(undefined);
@@ -87,7 +87,7 @@ export class PasswordPromptModal extends Modal {
 
 			this.confirmBtn = container.createEl('button', {
 				text: 'Confirm',
-				cls: 'lockdown-modal-button lockdown-modal-button-primary'
+				cls: 'ld-button ld-button--primary'
 			});
 			this.confirmBtn.onClickEvent(() => this.handleConfirm());
 		});
@@ -128,27 +128,27 @@ export class PasswordPromptModal extends Modal {
 
 		this.strengthMeter.style.width = `${strength.score}%`;
 
-		this.strengthMeter.className = 'lockdown-password-strength-meter';
+		this.strengthMeter.className = 'ld-password-strength__meter';
 		if (strength.score < 30) {
-			this.strengthMeter.classList.add('strength-weak');
+			this.strengthMeter.classList.add('ld-password-strength__meter--weak');
 		} else if (strength.score < 60) {
-			this.strengthMeter.classList.add('strength-fair');
+			this.strengthMeter.classList.add('ld-password-strength__meter--fair');
 		} else if (strength.score < 80) {
-			this.strengthMeter.classList.add('strength-good');
+			this.strengthMeter.classList.add('ld-password-strength__meter--good');
 		} else {
-			this.strengthMeter.classList.add('strength-strong');
+			this.strengthMeter.classList.add('ld-password-strength__meter--strong');
 		}
 
 		this.strengthText.textContent = strength.feedback;
-		this.strengthText.className = 'lockdown-password-strength-text';
+		this.strengthText.className = 'ld-password-strength__text';
 		if (strength.score < 30) {
-			this.strengthText.classList.add('strength-weak');
+			this.strengthText.classList.add('ld-password-strength__text--weak');
 		} else if (strength.score < 60) {
-			this.strengthText.classList.add('strength-fair');
+			this.strengthText.classList.add('ld-password-strength__text--fair');
 		} else if (strength.score < 80) {
-			this.strengthText.classList.add('strength-good');
+			this.strengthText.classList.add('ld-password-strength__text--good');
 		} else {
-			this.strengthText.classList.add('strength-strong');
+			this.strengthText.classList.add('ld-password-strength__text--strong');
 		}
 	}
 }

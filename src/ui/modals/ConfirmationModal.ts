@@ -18,18 +18,18 @@ export class ConfirmationModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.contentEl.addClass('lockdown-modal');
+		this.contentEl.addClass('ld-modal');
 
-		const titleContainer = this.contentEl.createDiv({ cls: 'lockdown-modal-title-container' });
-		titleContainer.createSpan({ text: '🔒', cls: 'lockdown-modal-icon' });
-		titleContainer.createEl('h2', { text: 'Lockdown', cls: 'lockdown-modal-title' });
+		const titleContainer = this.contentEl.createDiv({ cls: 'ld-modal__title-container' });
+		titleContainer.createSpan({ text: '🔒', cls: 'ld-modal__icon' });
+		titleContainer.createEl('h2', { text: 'Lockdown', cls: 'ld-modal__title' });
 
-		this.contentEl.createEl('p', { text: this.message, cls: 'lockdown-modal-message' });
+		this.contentEl.createEl('p', { text: this.message, cls: 'ld-modal__message' });
 
-		this.contentEl.createDiv({ cls: 'lockdown-modal-button-container' }, (container) => {
+		this.contentEl.createDiv({ cls: 'ld-modal__button-container' }, (container) => {
 			const cancelBtn = container.createEl('button', {
 				text: 'Cancel',
-				cls: 'lockdown-modal-button lockdown-modal-button-secondary'
+				cls: 'ld-button ld-button--secondary'
 			});
 			cancelBtn.onClickEvent(() => {
 				this.resolver(false);
@@ -38,7 +38,7 @@ export class ConfirmationModal extends Modal {
 
 			const confirmBtn = container.createEl('button', {
 				text: 'Confirm',
-				cls: 'lockdown-modal-button lockdown-modal-button-primary'
+				cls: 'ld-button ld-button--primary'
 			});
 			confirmBtn.onClickEvent(() => {
 				this.resolver(true);
