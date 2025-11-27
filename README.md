@@ -26,18 +26,24 @@ Secure your sensitive notes with **AES-256-GCM encryption**. Perfect for journal
 
 ## Installation
 
-### From Obsidian
+### Coming Soon: Community Plugin
 
-1. Open **Settings** → **Community Plugins**
-2. Disable **Safe Mode**
-3. Click **Browse** and search for **"Lockdown"**
-4. **Install** and **Enable**
+Lockdown is currently **under review** by the Obsidian team for inclusion in the official Community Plugins directory. Once approved, you'll be able to install it directly from within Obsidian.
 
-### Manual
+**Coming soon to Community Plugins!**
 
-1. Download latest release from [Releases](https://github.com/Rynaro/lockdown/releases)
-2. Extract to `.obsidian/plugins/lockdown/`
-3. Enable in Obsidian settings
+### Manual Installation (Current Method)
+
+Lockdown is **fully functional and ready to use** via manual installation. Here's how:
+
+1. **Download** the latest release from [GitHub Releases](https://github.com/Rynaro/lockdown/releases)
+2. **Extract** the contents to your vault's `.obsidian/plugins/lockdown/` folder
+   - Create the folder if it doesn't exist
+   - Path should be: `YourVault/.obsidian/plugins/lockdown/`
+3. **Reload** Obsidian (Cmd/Ctrl + R or restart the app)
+4. **Enable** the plugin in **Settings** → **Community Plugins** → Enable "Lockdown"
+
+That's it! Manual installation works perfectly and you'll get the same great experience.
 
 ---
 
