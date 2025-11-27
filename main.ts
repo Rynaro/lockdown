@@ -1,4 +1,4 @@
-import { Plugin, PluginSettingTab, Setting, TFile, TFolder, Notice, MarkdownView, Editor, Modal, App } from 'obsidian';
+import { Plugin, PluginSettingTab, Setting, TFile, TFolder, Notice, MarkdownView, Modal, App } from 'obsidian';
 import { EditorView, ViewUpdate, ViewPlugin } from '@codemirror/view';
 import { StateField, StateEffect } from '@codemirror/state';
 import { EditorState } from '@codemirror/state';
@@ -16,8 +16,6 @@ import { FileExplorerIndicators } from './src/ui/components/FileExplorerIndicato
 import { PasswordPromptModal } from './src/ui/modals/PasswordPromptModal';
 import { ConfirmationModal } from './src/ui/modals/ConfirmationModal';
 import { Password } from './src/core/model/Password.value';
-import { NotePath } from './src/core/model/NotePath.value';
-import { EncryptedBlob } from './src/core/model/EncryptedBlob.value';
 
 interface LockdownSettings {
 	lockIcon: string;
@@ -61,7 +59,7 @@ export default class LockdownPlugin extends Plugin {
 	private lastActivityTime: number = Date.now();
 	lockedFolders: Set<string> = new Set();
 	lockedFiles: Set<string> = new Set();
-	private isUnlocking: boolean = false;
+	private isUnlocking = false;
 	private isLocking: Set<string> = new Set();
 	private activeLeafChangeTimeout: number | null = null;
 
@@ -220,17 +218,16 @@ export default class LockdownPlugin extends Plugin {
 					
 					// Show overlay for current file if it's locked (only if not already shown)
 					if (currentFile && currentFile.extension === 'md' && this.isFileLocked(currentFile.path)) {
-						// Check if overlay already exists before showing
-						const existingOverlay = document.querySelector(`.lockdown-overlay[data-file-path="${currentFile.path}"]`);
-						if (!existingOverlay) {
-							setTimeout(() => {
-								// Double-check file is still locked and overlay doesn't exist
-								if (this.isFileLocked(currentFile.path) && 
-									!document.querySelector(`.lockdown-overlay[data-file-path="${currentFile.path}"]`)) {
-									this.showLockOverlay(currentFile.path);
+								// Check if overlay already exists before showing
+								if (!this.lockOverlayManager.has(currentFile.path)) {
+									setTimeout(() => {
+										// Double-check file is still locked and overlay doesn't exist
+										if (this.isFileLocked(currentFile.path) && 
+											!this.lockOverlayManager.has(currentFile.path)) {
+											this.showLockOverlay(currentFile.path);
+										}
+									}, 100);
 								}
-							}, 100);
-						}
 					}
 				}, 100); // Debounce delay to prevent glitching
 			})
@@ -332,11 +329,10 @@ export default class LockdownPlugin extends Plugin {
 					
 					// Check if file is locked
 					if (this.isFileLocked(file.path)) {
-						// Check if overlay already exists to prevent flickering
-						const existingOverlay = document.querySelector(`.lockdown-overlay[data-file-path="${file.path}"]`);
-						if (existingOverlay) {
-							return; // Overlay already exists, don't recreate
-						}
+					// Check if overlay already exists to prevent flickering
+					if (this.lockOverlayManager.has(file.path)) {
+						return; // Overlay already exists, don't recreate
+					}
 						
 						// Clear editor content to hide encrypted data
 						// We do this regardless of whether it's actually encrypted on disk
@@ -347,14 +343,14 @@ export default class LockdownPlugin extends Plugin {
 						}
 						
 						// Show lock overlay
-						// Small delay ensures the view is ready
-						setTimeout(() => {
-							// Double-check file is still locked and overlay doesn't exist
-							if (this.isFileLocked(file.path) && 
-								!document.querySelector(`.lockdown-overlay[data-file-path="${file.path}"]`)) {
-								this.showLockOverlay(file.path);
-							}
-						}, 100);
+					// Small delay ensures the view is ready
+					setTimeout(() => {
+						// Double-check file is still locked and overlay doesn't exist
+						if (this.isFileLocked(file.path) && 
+							!this.lockOverlayManager.has(file.path)) {
+							this.showLockOverlay(file.path);
+						}
+					}, 100);
 					}
 				}
 			})
@@ -1540,13 +1536,13 @@ export default class LockdownPlugin extends Plugin {
 		const lockdownViewPlugin = ViewPlugin.fromClass(
 			class {
 				private updateTimeout: number | null = null;
-				private isUpdating: boolean = false;
+				private isUpdating = false;
 
-				constructor(view: EditorView) {
-					// Don't update in constructor - let the update() method handle it
-				}
+			constructor(private view: EditorView) {
+				// Don't update in constructor - let the update() method handle it
+			}
 
-				update(update: ViewUpdate) {
+			update(update: ViewUpdate) {
 					// Update lock state when file changes
 					// Use a longer delay to ensure we're outside any update cycle
 					if (this.updateTimeout) {
@@ -1592,102 +1588,102 @@ export default class LockdownPlugin extends Plugin {
 									// Schedule async read, then update state
 									plugin.app.vault.read(activeFile).then(content => {
 										// Use multiple requestAnimationFrame calls to ensure we're safe
-										requestAnimationFrame(() => {
-											requestAnimationFrame(() => {
-												try {
-													if (!view.dom.isConnected) {
-														this.isUpdating = false;
-														return;
-													}
-													
-													view.dispatch({
-														effects: setLockedEffect.of({ locked: true, content })
-													});
-													
-													// Restore content if needed (defer this too)
-													requestAnimationFrame(() => {
-														requestAnimationFrame(() => {
-															try {
-																if (!view.dom.isConnected) {
-																	this.isUpdating = false;
-																	return;
-																}
-																
-																const currentContent = view.state.doc.toString();
-																if (currentContent !== content) {
-																	view.dispatch({
-																		changes: {
-																			from: 0,
-																			to: view.state.doc.length,
-																			insert: content
-																		}
-																	});
-																}
-																this.isUpdating = false;
-															} catch (error) {
-																console.error('Error updating locked content:', error);
-																this.isUpdating = false;
-															}
-														});
-													});
-												} catch (error) {
-													console.error('Error updating lock state:', error);
-													this.isUpdating = false;
-												}
-											});
-										});
-									}).catch(error => {
-										console.error('Failed to read file for lock state:', error);
+						requestAnimationFrame(() => {
+							requestAnimationFrame(() => {
+								try {
+									if (!editorView.dom.isConnected) {
 										this.isUpdating = false;
+										return;
+									}
+									
+									editorView.dispatch({
+										effects: setLockedEffect.of({ locked: true, content })
 									});
-								} else {
-									// Not locked - update immediately (synchronously)
+									
+									// Restore content if needed (defer this too)
 									requestAnimationFrame(() => {
 										requestAnimationFrame(() => {
 											try {
-												if (!view.dom.isConnected) {
+												if (!editorView.dom.isConnected) {
 													this.isUpdating = false;
 													return;
 												}
-												view.dispatch({
-													effects: setLockedEffect.of({ locked: false, content: '' })
-												});
+												
+												const currentContent = editorView.state.doc.toString();
+												if (currentContent !== content) {
+													editorView.dispatch({
+														changes: {
+															from: 0,
+															to: editorView.state.doc.length,
+															insert: content
+														}
+													});
+												}
 												this.isUpdating = false;
-											} catch (error) {
-												console.error('Error updating lock state:', error);
-												this.isUpdating = false;
-											}
-										});
-									});
-								}
-							} else {
+							} catch (error) {
+								console.error('Error updating locked content:', error);
 								this.isUpdating = false;
 							}
-						} else {
-							const state = view.state.field(lockdownState);
-							if (state.locked || state.filePath !== null) {
-								// Defer this dispatch too
-								requestAnimationFrame(() => {
-									requestAnimationFrame(() => {
-										try {
-											if (!view.dom.isConnected) {
-												this.isUpdating = false;
-												return;
-											}
-											view.dispatch({
-												effects: setLockedEffect.of({ locked: false, content: '' })
-											});
-											this.isUpdating = false;
-										} catch (error) {
-											console.error('Error clearing lock state:', error);
-											this.isUpdating = false;
-										}
-									});
-								});
-							} else {
-								this.isUpdating = false;
-							}
+						});
+					});
+				} catch (error) {
+					console.error('Error updating lock state:', error);
+					this.isUpdating = false;
+				}
+					});
+				});
+			}).catch(error => {
+				console.error('Failed to read file for lock state:', error);
+				this.isUpdating = false;
+			});
+		} else {
+			// Not locked - update immediately (synchronously)
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					try {
+						if (!editorView.dom.isConnected) {
+							this.isUpdating = false;
+							return;
 						}
+						editorView.dispatch({
+							effects: setLockedEffect.of({ locked: false, content: '' })
+						});
+						this.isUpdating = false;
+					} catch (error) {
+						console.error('Error updating lock state:', error);
+						this.isUpdating = false;
+					}
+				});
+			});
+		}
+							} else {
+								this.isUpdating = false;
+							}
+				} else {
+					const state = editorView.state.field(lockdownState);
+					if (state.locked || state.filePath !== null) {
+						// Defer this dispatch too
+						requestAnimationFrame(() => {
+							requestAnimationFrame(() => {
+								try {
+									if (!editorView.dom.isConnected) {
+										this.isUpdating = false;
+										return;
+									}
+									editorView.dispatch({
+										effects: setLockedEffect.of({ locked: false, content: '' })
+									});
+									this.isUpdating = false;
+								} catch (error) {
+									console.error('Error clearing lock state:', error);
+									this.isUpdating = false;
+								}
+							});
+						});
+					} else {
+						this.isUpdating = false;
+					}
+				}
 					} catch (error) {
 						console.error('Error in updateLockState:', error);
 						this.isUpdating = false;
@@ -1710,17 +1706,17 @@ export default class LockdownPlugin extends Plugin {
 					const newContent = tr.newDoc.toString();
 					if (newContent !== state.originalContent && state.originalContent) {
 						// Block the transaction and restore original content
-						// Use requestAnimationFrame to defer the restoration
+					// Use requestAnimationFrame to defer the restoration
+					requestAnimationFrame(() => {
 						requestAnimationFrame(() => {
-							requestAnimationFrame(() => {
-								try {
-									const view = tr.startState.field(lockdownState, false);
-									// Actually, we can't access the view here, so just return the blocked transaction
-								} catch (e) {
-									// Ignore
-								}
-							});
+							try {
+								const _view = tr.startState.field(lockdownState, false);
+								// Actually, we can't access the view here, so just return the blocked transaction
+							} catch (e) {
+								// Ignore
+							}
 						});
+					});
 						
 						return {
 							changes: {
@@ -1816,7 +1812,7 @@ class LockedFilesManagerModal extends Modal {
 
 		let currentTab: 'files' | 'folders' = 'files';
 
-		const renderFiles = (filter: string = '') => {
+		const renderFiles = (filter = '') => {
 			filesList.empty();
 			
 			if (currentTab === 'files') {
@@ -1838,7 +1834,7 @@ class LockedFilesManagerModal extends Modal {
 				nameEl.title = filePath;
 				
 				// File path (smaller)
-				const pathEl = fileItem.createEl('div', { cls: 'lockdown-file-path', text: filePath });
+				fileItem.createEl('div', { cls: 'lockdown-file-path', text: filePath });
 				
 				// Status indicators
 				const statusEl = fileItem.createDiv({ cls: 'lockdown-file-status' });
@@ -1891,7 +1887,7 @@ class LockedFilesManagerModal extends Modal {
 					nameEl.title = folderPath;
 					
 					// Folder path (smaller)
-					const pathEl = folderItem.createEl('div', { cls: 'lockdown-file-path', text: folderPath });
+					folderItem.createEl('div', { cls: 'lockdown-file-path', text: folderPath });
 					
 					// Status indicators
 					const statusEl = folderItem.createDiv({ cls: 'lockdown-file-status' });

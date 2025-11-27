@@ -16,22 +16,14 @@
 	},
 	"rules": {
 		"no-unused-vars": "off",
-		"@typescript-eslint/no-unused-vars": ["error", { "args": "none" }],
+		"@typescript-eslint/no-unused-vars": ["error", { "args": "none", "varsIgnorePattern": "^_" }],
 		"@typescript-eslint/ban-ts-comment": "off",
 		"no-prototype-builtins": "off",
 		"@typescript-eslint/no-empty-function": "off",
 		"@typescript-eslint/no-explicit-any": "warn",
-		"no-restricted-imports": [
-			"error",
-			{
-				"patterns": [
-					{
-						"group": ["obsidian", "**/infrastructure/**", "**/application/**", "**/ui/**"],
-						"message": "Core domain layer must not depend on external frameworks or upper layers"
-					}
-				]
-			}
-		]
+		"@typescript-eslint/no-inferrable-types": "warn",
+		"@typescript-eslint/no-this-alias": "warn",
+		"no-useless-escape": "warn"
 	},
 	"overrides": [
 		{

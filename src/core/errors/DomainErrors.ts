@@ -1,5 +1,5 @@
 export class WrongPasswordError extends Error {
-	constructor(message: string = 'Incorrect password or corrupted data') {
+	constructor(message = 'Incorrect password or corrupted data') {
 		super(message);
 		this.name = 'WrongPasswordError';
 	}

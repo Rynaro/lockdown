@@ -1,0 +1,234 @@
+name: Code Quality & Linting
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript type checking
+        id: typecheck
+        run: |
+          echo "### 🔍 TypeScript Type Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if npm run type-check 2>&1 | tee typecheck.log; then
+            echo "✅ **Status:** Passed" >> $GITHUB_STEP_SUMMARY
+            echo "TYPE_CHECK_STATUS=✅ Passed" >> $GITHUB_ENV
+          else
+            echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>Error Details</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            cat typecheck.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+            echo "TYPE_CHECK_STATUS=❌ Failed" >> $GITHUB_ENV
+            exit 1
+          fi
+
+      - name: Run ESLint
+        id: eslint
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 ESLint Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Run ESLint with detailed output
+          if npm run lint -- --format json --output-file eslint-report.json; then
+            echo "✅ **Status:** Passed - No linting errors" >> $GITHUB_STEP_SUMMARY
+            echo "LINT_STATUS=✅ Passed" >> $GITHUB_ENV
+            
+            # Count files checked
+            FILE_COUNT=$(find src -name "*.ts" 2>/dev/null | wc -l)
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Files Checked:** $FILE_COUNT TypeScript files" >> $GITHUB_STEP_SUMMARY
+          else
+            # Extract error counts from JSON report
+            if [ -f eslint-report.json ]; then
+              ERROR_COUNT=$(jq '[.[] | .errorCount] | add' eslint-report.json)
+              WARNING_COUNT=$(jq '[.[] | .warningCount] | add' eslint-report.json)
+              
+              echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- **Errors:** $ERROR_COUNT" >> $GITHUB_STEP_SUMMARY
+              echo "- **Warnings:** $WARNING_COUNT" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Show detailed errors
+              npm run lint 2>&1 | tee eslint-output.log
+              
+              echo "<details><summary>📝 Detailed Errors</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              head -n 100 eslint-output.log >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              
+              echo "LINT_STATUS=❌ Failed ($ERROR_COUNT errors, $WARNING_COUNT warnings)" >> $GITHUB_ENV
+            else
+              echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+              echo "LINT_STATUS=❌ Failed" >> $GITHUB_ENV
+            fi
+            exit 1
+          fi
+
+      - name: Check architectural rules
+        id: arch-check
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏗️ Architecture Rules" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check core layer has no forbidden imports
+          if grep -r "from 'obsidian'" src/core/ 2>/dev/null; then
+            echo "❌ **Core Layer Violation:** Found Obsidian imports in core domain" >> $GITHUB_STEP_SUMMARY
+            echo "ARCH_STATUS=❌ Violation detected" >> $GITHUB_ENV
+            exit 1
+          fi
+          
+          if grep -r "from.*infrastructure" src/core/ 2>/dev/null; then
+            echo "❌ **Core Layer Violation:** Found infrastructure imports in core domain" >> $GITHUB_STEP_SUMMARY
+            echo "ARCH_STATUS=❌ Violation detected" >> $GITHUB_ENV
+            exit 1
+          fi
+          
+          if grep -r "from.*application" src/core/ 2>/dev/null; then
+            echo "❌ **Core Layer Violation:** Found application imports in core domain" >> $GITHUB_STEP_SUMMARY
+            echo "ARCH_STATUS=❌ Violation detected" >> $GITHUB_ENV
+            exit 1
+          fi
+          
+          echo "✅ **Status:** All architectural rules enforced" >> $GITHUB_STEP_SUMMARY
+          echo "- Core layer is pure (no framework dependencies)" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency flow is correct (inward only)" >> $GITHUB_STEP_SUMMARY
+          echo "ARCH_STATUS=✅ Passed" >> $GITHUB_ENV
+
+      - name: Calculate code metrics
+        id: metrics
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Code Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Count TypeScript files by layer
+          CORE_FILES=$(find src/core -name "*.ts" 2>/dev/null | wc -l || echo 0)
+          APP_FILES=$(find src/application -name "*.ts" 2>/dev/null | wc -l || echo 0)
+          INFRA_FILES=$(find src/infrastructure -name "*.ts" 2>/dev/null | wc -l || echo 0)
+          UI_FILES=$(find src/ui -name "*.ts" 2>/dev/null | wc -l || echo 0)
+          TOTAL_FILES=$(find src -name "*.ts" 2>/dev/null | wc -l || echo 0)
+          
+          # Count lines of code
+          TOTAL_LINES=$(find src -name "*.ts" -exec wc -l {} + 2>/dev/null | tail -1 | awk '{print $1}' || echo 0)
+          MAIN_LINES=$(wc -l main.ts 2>/dev/null | awk '{print $1}' || echo 0)
+          
+          echo "| Layer | Files | Description |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|-------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎯 Core | $CORE_FILES | Pure domain logic |" >> $GITHUB_STEP_SUMMARY
+          echo "| 💼 Application | $APP_FILES | Use cases & services |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔧 Infrastructure | $INFRA_FILES | External integrations |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎨 UI | $UI_FILES | User interface |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total** | **$TOTAL_FILES** | **Modular files** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Lines of Code:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Modular architecture: ~$TOTAL_LINES lines" >> $GITHUB_STEP_SUMMARY
+          echo "- Main plugin orchestrator: $MAIN_LINES lines" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload ESLint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eslint-report
+          path: |
+            eslint-report.json
+            eslint-output.log
+          retention-days: 30
+
+      - name: Final summary
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📝 Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| TypeScript | ${{ env.TYPE_CHECK_STATUS }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ESLint | ${{ env.LINT_STATUS }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Architecture | ${{ env.ARCH_STATUS }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ env.TYPE_CHECK_STATUS }}" == *"Passed"* ]] && \
+             [[ "${{ env.LINT_STATUS }}" == *"Passed"* ]] && \
+             [[ "${{ env.ARCH_STATUS }}" == *"Passed"* ]]; then
+            echo "### ✅ All Checks Passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Code quality meets all standards. Ready to merge! 🚀" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Some Checks Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please review and fix the issues above before merging." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            let comment = '## 🔍 Code Quality Report\n\n';
+            
+            comment += '| Check | Status |\n';
+            comment += '|-------|--------|\n';
+            comment += `| TypeScript | ${{ env.TYPE_CHECK_STATUS }} |\n`;
+            comment += `| ESLint | ${{ env.LINT_STATUS }} |\n`;
+            comment += `| Architecture | ${{ env.ARCH_STATUS }} |\n\n`;
+            
+            if (process.env.TYPE_CHECK_STATUS.includes('Passed') && 
+                process.env.LINT_STATUS.includes('Passed') &&
+                process.env.ARCH_STATUS.includes('Passed')) {
+              comment += '### ✅ All checks passed!\n\n';
+              comment += 'Code quality meets all standards. Ready to merge! 🚀';
+            } else {
+              comment += '### ⚠️ Action Required\n\n';
+              comment += 'Please fix the linting issues before merging.\n\n';
+              comment += 'Run locally:\n';
+              comment += '```bash\n';
+              comment += 'npm run lint:fix  # Auto-fix issues\n';
+              comment += 'npm run validate # Check all\n';
+              comment += '```';
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

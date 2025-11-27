@@ -2,7 +2,6 @@ import { EncryptionService } from '../core/crypto/EncryptionService';
 import { Plaintext } from '../core/model/Plaintext.value';
 import { Password } from '../core/model/Password.value';
 import { NotePath } from '../core/model/NotePath.value';
-import { EncryptedBlob } from '../core/model/EncryptedBlob.value';
 
 export class LockFileUseCase {
 	constructor(private readonly encryptionService: EncryptionService) {}
