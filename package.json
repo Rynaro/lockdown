@@ -6,7 +6,11 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"version": "node version-bump.mjs && git add manifest.json versions.json"
+		"version": "node version-bump.mjs && git add manifest.json versions.json",
+		"lint": "eslint . --ext .ts",
+		"lint:fix": "eslint . --ext .ts --fix",
+		"type-check": "tsc -noEmit -skipLibCheck",
+		"validate": "npm run type-check && npm run lint"
 	},
 	"keywords": [],
 	"author": "",

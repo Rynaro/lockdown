@@ -1,7 +1,21 @@
-import { Plugin, PluginSettingTab, Setting, TFile, TFolder, Notice, MarkdownView, Editor, Modal, App } from 'obsidian';
+import { Plugin, PluginSettingTab, Setting, TFile, TFolder, Notice, MarkdownView, Modal, App } from 'obsidian';
 import { EditorView, ViewUpdate, ViewPlugin } from '@codemirror/view';
 import { StateField, StateEffect } from '@codemirror/state';
 import { EditorState } from '@codemirror/state';
+
+import { Pbkdf2KeyDeriver } from './src/core/crypto/Pbkdf2KeyDeriver';
+import { AesGcmEncryptor } from './src/core/crypto/AesGcmEncryptor';
+import { EncryptionService } from './src/core/crypto/EncryptionService';
+import { LockFileUseCase } from './src/application/LockFileUseCase';
+import { UnlockFileUseCase } from './src/application/UnlockFileUseCase';
+import { SessionVault } from './src/application/SessionVault';
+import { PasswordStrengthCalculator } from './src/application/PasswordStrengthCalculator';
+import { LockRegistry } from './src/infrastructure/storage/LockRegistry';
+import { LockOverlay } from './src/ui/components/LockOverlay';
+import { FileExplorerIndicators } from './src/ui/components/FileExplorerIndicators';
+import { PasswordPromptModal } from './src/ui/modals/PasswordPromptModal';
+import { ConfirmationModal } from './src/ui/modals/ConfirmationModal';
+import { Password } from './src/core/model/Password.value';
 
 interface LockdownSettings {
 	lockIcon: string;
@@ -35,25 +49,57 @@ const ENCRYPTION_HEADER = `${ENCRYPTION_MARKER}\n`;
 export default class LockdownPlugin extends Plugin {
 	settings: LockdownSettings;
 	private statusBarEl: HTMLElement | null = null;
-	private filePasswords: Map<string, string> = new Map(); // In-memory password cache
-	passwordHashes: Map<string, string> = new Map(); // Password hashes for verification (made public for modal access)
-	private rootPassword: string | null = null; // In-memory root password cache (cleared on unload)
+	private filePasswords: Map<string, string> = new Map();
+	passwordHashes: Map<string, string> = new Map();
+	private rootPassword: string | null = null;
 	private previousActiveFile: TFile | null = null;
-	private lockOverlays: Map<string, HTMLElement> = new Map(); // Track lock overlays by file path
-	private fileExplorerIndicators: Map<string, HTMLElement> = new Map(); // Track file explorer indicators
-	sessionTimeoutTimer: number | null = null; // Session timeout timer
-	private lastActivityTime: number = Date.now(); // Track last activity for session timeout
-	lockedFolders: Set<string> = new Set(); // Track locked folders
-	lockedFiles: Set<string> = new Set(); // Track locked files (made public for modal access)
-	private isUnlocking: boolean = false; // Flag to prevent re-encryption during unlock
-	private isLocking: Set<string> = new Set(); // Track files currently being locked to prevent re-encryption
-	private activeLeafChangeTimeout: number | null = null; // Debounce timer for active-leaf-change
+	private lockOverlays: Map<string, HTMLElement> = new Map();
+	private fileExplorerIndicators: Map<string, HTMLElement> = new Map();
+	sessionTimeoutTimer: number | null = null;
+	private lastActivityTime: number = Date.now();
+	lockedFolders: Set<string> = new Set();
+	lockedFiles: Set<string> = new Set();
+	private isUnlocking = false;
+	private isLocking: Set<string> = new Set();
+	private activeLeafChangeTimeout: number | null = null;
+
+	private encryptionService: EncryptionService;
+	private lockFileUseCase: LockFileUseCase;
+	private unlockFileUseCase: UnlockFileUseCase;
+	private sessionVault: SessionVault;
+	private passwordStrengthCalculator: PasswordStrengthCalculator;
+	private lockRegistry: LockRegistry;
+	private lockOverlayManager: LockOverlay;
+	private fileExplorerIndicatorsManager: FileExplorerIndicators;
+
+	private initializeServices(): void {
+		const keyDeriver = new Pbkdf2KeyDeriver(1_000_000, 'SHA-512');
+		const encryptor = new AesGcmEncryptor();
+		this.encryptionService = new EncryptionService(keyDeriver, encryptor);
+		this.lockFileUseCase = new LockFileUseCase(this.encryptionService);
+		this.unlockFileUseCase = new UnlockFileUseCase(this.encryptionService);
+		this.sessionVault = new SessionVault(
+			this.settings.sessionTimeoutMinutes,
+			() => this.handleSessionTimeout()
+		);
+		this.passwordStrengthCalculator = new PasswordStrengthCalculator();
+		this.lockRegistry = new LockRegistry();
+		this.lockOverlayManager = new LockOverlay();
+		this.fileExplorerIndicatorsManager = new FileExplorerIndicators();
+
+		this.lockRegistry.loadFromData({
+			lockedFiles: Array.from(this.lockedFiles),
+			lockedFolders: Array.from(this.lockedFolders),
+			passwordHashes: Object.fromEntries(this.passwordHashes)
+		});
+	}
 
 	async onload() {
 		await this.loadSettings();
 		await this.loadLockedFiles();
 
-		// Add status bar
+		this.initializeServices();
+
 		if (this.settings.showStatusBar) {
 			this.statusBarEl = this.addStatusBarItem();
 			this.updateStatusBar();
@@ -172,17 +218,16 @@ export default class LockdownPlugin extends Plugin {
 					
 					// Show overlay for current file if it's locked (only if not already shown)
 					if (currentFile && currentFile.extension === 'md' && this.isFileLocked(currentFile.path)) {
-						// Check if overlay already exists before showing
-						const existingOverlay = document.querySelector(`.lockdown-overlay[data-file-path="${currentFile.path}"]`);
-						if (!existingOverlay) {
-							setTimeout(() => {
-								// Double-check file is still locked and overlay doesn't exist
-								if (this.isFileLocked(currentFile.path) && 
-									!document.querySelector(`.lockdown-overlay[data-file-path="${currentFile.path}"]`)) {
-									this.showLockOverlay(currentFile.path);
+								// Check if overlay already exists before showing
+								if (!this.lockOverlayManager.has(currentFile.path)) {
+									setTimeout(() => {
+										// Double-check file is still locked and overlay doesn't exist
+										if (this.isFileLocked(currentFile.path) && 
+											!this.lockOverlayManager.has(currentFile.path)) {
+											this.showLockOverlay(currentFile.path);
+										}
+									}, 100);
 								}
-							}, 100);
-						}
 					}
 				}, 100); // Debounce delay to prevent glitching
 			})
@@ -284,11 +329,10 @@ export default class LockdownPlugin extends Plugin {
 					
 					// Check if file is locked
 					if (this.isFileLocked(file.path)) {
-						// Check if overlay already exists to prevent flickering
-						const existingOverlay = document.querySelector(`.lockdown-overlay[data-file-path="${file.path}"]`);
-						if (existingOverlay) {
-							return; // Overlay already exists, don't recreate
-						}
+					// Check if overlay already exists to prevent flickering
+					if (this.lockOverlayManager.has(file.path)) {
+						return; // Overlay already exists, don't recreate
+					}
 						
 						// Clear editor content to hide encrypted data
 						// We do this regardless of whether it's actually encrypted on disk
@@ -299,14 +343,14 @@ export default class LockdownPlugin extends Plugin {
 						}
 						
 						// Show lock overlay
-						// Small delay ensures the view is ready
-						setTimeout(() => {
-							// Double-check file is still locked and overlay doesn't exist
-							if (this.isFileLocked(file.path) && 
-								!document.querySelector(`.lockdown-overlay[data-file-path="${file.path}"]`)) {
-								this.showLockOverlay(file.path);
-							}
-						}, 100);
+					// Small delay ensures the view is ready
+					setTimeout(() => {
+						// Double-check file is still locked and overlay doesn't exist
+						if (this.isFileLocked(file.path) && 
+							!this.lockOverlayManager.has(file.path)) {
+							this.showLockOverlay(file.path);
+						}
+					}, 100);
 					}
 				}
 			})
@@ -423,247 +467,35 @@ export default class LockdownPlugin extends Plugin {
 		await this.saveData(data);
 	}
 
-	// Encryption utilities
-	async deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-		const encoder = new TextEncoder();
-		const keyMaterial = await crypto.subtle.importKey(
-			'raw',
-			encoder.encode(password),
-			'PBKDF2',
-			false,
-			['deriveBits', 'deriveKey']
-		);
-
-		return crypto.subtle.deriveKey(
-			{
-				name: 'PBKDF2',
-				salt: salt,
-				iterations: 100000,
-				hash: 'SHA-256'
-			},
-			keyMaterial,
-			{ name: 'AES-GCM', length: 256 },
-			false,
-			['encrypt', 'decrypt']
-		);
-	}
-
-	// Helper to convert Uint8Array to Base64 robustly
-	arrayBufferToBase64(buffer: Uint8Array): string {
-		let binary = '';
-		const len = buffer.byteLength;
-		for (let i = 0; i < len; i++) {
-			binary += String.fromCharCode(buffer[i]);
-		}
-		return window.btoa(binary);
-	}
-
-	// Helper to convert Base64 to Uint8Array robustly
-	base64ToArrayBuffer(base64: string): Uint8Array {
-		const binary_string = window.atob(base64);
-		const len = binary_string.length;
-		const bytes = new Uint8Array(len);
-		for (let i = 0; i < len; i++) {
-			bytes[i] = binary_string.charCodeAt(i);
-		}
-		return bytes;
-	}
-
 	async encryptContent(content: string, password: string): Promise<string> {
+		const activeFile = this.app.workspace.getActiveFile();
+		const filePath = activeFile?.path || '';
+		
 		try {
-			if (!content && content !== '') throw new Error('Content is null/undefined');
-			if (!password) throw new Error('Password is empty');
-
-			const encoder = new TextEncoder();
-			const data = encoder.encode(content);
-
-			const salt = crypto.getRandomValues(new Uint8Array(16));
-			const iv = crypto.getRandomValues(new Uint8Array(12));
-			const key = await this.deriveKey(password, salt);
-
-			const encrypted = await crypto.subtle.encrypt(
-				{ name: 'AES-GCM', iv: iv },
-				key,
-				data
-			);
-
-			const encryptedArray = new Uint8Array(encrypted);
-			const combined = new Uint8Array(salt.length + iv.length + encryptedArray.length);
-			combined.set(salt);
-			combined.set(iv, salt.length);
-			combined.set(encryptedArray, salt.length + iv.length);
-
-			const base64 = this.arrayBufferToBase64(combined);
-			return `${ENCRYPTION_HEADER}${base64}`;
+			return await this.lockFileUseCase.execute(content, password, filePath);
 		} catch (error) {
-			throw new Error(`Encryption failed: ${error.message}`);
+			throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		}
 	}
 
 	async decryptContent(encryptedContent: string, password: string): Promise<string> {
+		const activeFile = this.app.workspace.getActiveFile();
+		const filePath = activeFile?.path || '';
+		
 		try {
-			if (!encryptedContent) throw new Error('Encrypted content is empty');
-			
-			// 1. Extract Base64 - handle marker properly
-			let base64 = encryptedContent;
-			
-			// If content starts with the header, remove it
-			if (base64.startsWith(ENCRYPTION_HEADER)) {
-				base64 = base64.substring(ENCRYPTION_HEADER.length).trim();
-			} else if (base64.includes(ENCRYPTION_MARKER)) {
-				// Find the first occurrence of the marker and take everything after it
-				const markerIndex = base64.indexOf(ENCRYPTION_MARKER);
-				base64 = base64.substring(markerIndex + ENCRYPTION_MARKER.length).trim();
-				
-				// If there are multiple markers (corrupted data), take only the first block
-				// Find the next newline or end of first base64 block
-				// Base64 strings don't contain newlines typically, so look for the first valid base64 block
-				const nextMarkerIndex = base64.indexOf(ENCRYPTION_MARKER);
-				if (nextMarkerIndex !== -1) {
-					// There's another marker, take only the content before it
-					base64 = base64.substring(0, nextMarkerIndex).trim();
-				}
-			}
-			
-			// 2. Clean whitespace (strict) - remove all whitespace including newlines
-			base64 = base64.trim().replace(/\s+/g, '');
-			
-			// 3. Handle duplicated encrypted data - extract only the first valid base64 block
-			// (We'll validate after extraction to avoid false positives from duplicates)
-			// Base64 strings end with = or == padding. If we see padding followed by base64-like characters,
-			// it's likely duplicated data. Try to find the first complete base64 block.
-			// We know the structure: 16 bytes salt + 12 bytes IV + encrypted data + 16 bytes GCM tag
-			// Minimum size is around 44 bytes (16+12+16), which is ~59 base64 characters
-			let extractedBase64 = base64;
-			
-			// Try to find where the first base64 block ends
-			// Base64 padding: = means 2 bytes of padding, == means 1 byte of padding
-			// Look for padding followed by a character that could start a new base64 string
-			
-			// First, try double == padding (more definitive)
-			// Look for == followed by a base64 character (start of next block)
-			const doublePaddingPattern = /==([A-Za-z0-9+\/])/g;
-			let doubleMatch;
-			let lastMatchIndex = -1;
-			
-			// Find all occurrences to get the first one
-			while ((doubleMatch = doublePaddingPattern.exec(base64)) !== null) {
-				if (lastMatchIndex === -1) {
-					lastMatchIndex = doubleMatch.index;
-				}
-			}
-			
-			if (lastMatchIndex !== -1) {
-				// Found == followed by a base64 character - likely duplicated data
-				// Extract only up to and including the ==
-				extractedBase64 = base64.substring(0, lastMatchIndex + 2);
-			} else {
-				// Try single = padding - look for = followed immediately by a base64 character
-				// This pattern: [base64 char]=[base64 char] indicates end of one block and start of another
-				const singlePaddingPattern = /([A-Za-z0-9+\/])=([A-Za-z0-9+\/])/;
-				const singleMatch = base64.match(singlePaddingPattern);
-				
-				if (singleMatch && singleMatch.index !== undefined) {
-					// Found = followed by a base64 character - likely duplicated data
-					// The match is [char]=[char], so match.index points to the char before =
-					// We want to include the =, so we need match.index + 2 (char + =)
-					extractedBase64 = base64.substring(0, singleMatch.index + 2);
-				} else {
-					// Fallback: if the string is suspiciously long (suggests duplication),
-					// try to find a reasonable split point
-					// A typical encrypted block for small content should be around 100-200 chars
-					// If we have much more, it's likely duplicated
-					if (base64.length > 300) {
-						// Try to find the first occurrence of a pattern that looks like the end
-						// Look for = followed by what might be the start of another block
-						// We'll take roughly the first third as a heuristic
-						const estimatedBlockSize = Math.floor(base64.length / 3);
-						// Find the first = near that position
-						const searchStart = Math.max(0, estimatedBlockSize - 50);
-						const searchEnd = Math.min(base64.length, estimatedBlockSize + 50);
-						const searchRegion = base64.substring(searchStart, searchEnd);
-						const paddingIndex = searchRegion.indexOf('=');
-						
-						if (paddingIndex !== -1) {
-							const actualIndex = searchStart + paddingIndex;
-							// Check if next char is base64-like
-							if (actualIndex + 1 < base64.length && /[A-Za-z0-9+\/]/.test(base64[actualIndex + 1])) {
-								extractedBase64 = base64.substring(0, actualIndex + 1);
-							}
-						}
-					}
-				}
-			}
-			
-			base64 = extractedBase64;
-			
-			if (!base64) throw new Error('No base64 data found');
-			
-			// Validate base64 format (should only contain base64 characters and padding)
-			// Now that we've extracted just the first block, validation should pass
-			if (!/^[A-Za-z0-9+\/]+={0,2}$/.test(base64)) {
-				throw new Error('Invalid base64 format: contains invalid characters');
-			}
-
-			// 4. Decode
-			let combined: Uint8Array;
-			try {
-				combined = this.base64ToArrayBuffer(base64);
-			} catch (e) {
-				throw new Error('Invalid Base64 string');
-			}
-
-			// 5. Validate Size (16 salt + 12 IV + min 1 byte data = 29, but empty data is possible? Encrypted empty string?)
-			// AES-GCM tag is usually 16 bytes, so min size is 16+12+16 = 44 bytes roughly.
-			// Let's just check header size.
-			if (combined.byteLength < 28) {
-				throw new Error('Data too short to contain Salt and IV');
-			}
-
-			const salt = combined.slice(0, 16);
-			const iv = combined.slice(16, 28);
-			const data = combined.slice(28);
-
-			const key = await this.deriveKey(password, salt);
-			
-			let decrypted: ArrayBuffer;
-			try {
-				decrypted = await crypto.subtle.decrypt(
-					{ name: 'AES-GCM', iv: iv },
-					key,
-					data
-				);
-			} catch (decryptError: any) {
-				if (decryptError.name === 'OperationError' || decryptError.name === 'InvalidAccessError') {
-					throw new Error('Incorrect password or corrupted data');
-				}
-				throw new Error(`Decryption failed: ${decryptError.message || 'Unknown error'}`);
-			}
-
-			const decoder = new TextDecoder();
-			const decryptedText = decoder.decode(decrypted);
-			
-			// Final safety check: decrypted text should not contain the encryption marker
-			if (decryptedText.includes(ENCRYPTION_MARKER)) {
-				throw new Error('Decryption failed: result contains encryption marker (likely wrong password or corrupted data)');
-			}
-			
-			return decryptedText;
+			return await this.unlockFileUseCase.execute(encryptedContent, password, filePath);
 		} catch (error) {
-			// Re-throw with more context if it's not already a formatted error
-			if (error instanceof Error && !error.message.includes('Decryption failed') && !error.message.includes('Incorrect password')) {
-				throw new Error(`Decryption error: ${error.message}`);
+			const message = error instanceof Error ? error.message : 'Unknown error';
+			if (message.includes('Incorrect password')) {
+				throw new Error('Incorrect password or corrupted data');
 			}
-			throw error;
+			throw new Error(`Decryption error: ${message}`);
 		}
 	}
 
 	async hashPassword(password: string): Promise<string> {
-		const encoder = new TextEncoder();
-		const data = encoder.encode(password);
-		const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-		const hashArray = Array.from(new Uint8Array(hashBuffer));
-		return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+		const pwd = Password.create(password);
+		return await pwd.hash();
 	}
 
 	isFileEncrypted(content: string): boolean {
@@ -712,22 +544,13 @@ export default class LockdownPlugin extends Plugin {
 		return files;
 	}
 
-	/**
-	 * Show lock overlay for a locked file
-	 */
 	showLockOverlay(filePath: string): void {
-		// Remove any existing overlay for this file
-		this.removeLockOverlay(filePath);
-
-		// Try to find the view - check all markdown views, not just active
 		let view: MarkdownView | null = null;
 		
-		// First try active view
 		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (activeView && activeView.file?.path === filePath) {
 			view = activeView;
 		} else {
-			// Check all open markdown views
 			const leaves = this.app.workspace.getLeavesOfType('markdown');
 			for (const leaf of leaves) {
 				const leafView = leaf.view as MarkdownView;
@@ -739,159 +562,49 @@ export default class LockdownPlugin extends Plugin {
 		}
 		
 		if (!view || view.file?.path !== filePath) {
-			console.log('showLockOverlay: View not found or file path mismatch', {
-				view: !!view,
-				viewFile: view?.file?.path,
-				targetPath: filePath
-			});
 			return;
 		}
 
-		// Find the view content container (markdown view content area)
 		const viewContent = view.contentEl;
 		if (!viewContent) {
-			console.log('showLockOverlay: viewContent not found');
 			return;
 		}
 
-		// Find the actual editor container - we want to overlay ONLY the editor area
-		// Try to find .cm-scroller first (the scrollable editor area)
 		let container: HTMLElement | null = viewContent.querySelector('.cm-scroller') as HTMLElement;
-		
-		// If not found, try .cm-editor (the editor wrapper)
+		if (!container) container = viewContent.querySelector('.cm-editor') as HTMLElement;
+		if (!container) container = viewContent.querySelector('.markdown-source-view') as HTMLElement;
+		if (!container) container = viewContent.querySelector('.markdown-reading-view') as HTMLElement;
 		if (!container) {
-			container = viewContent.querySelector('.cm-editor') as HTMLElement;
-		}
-		
-		// If still not found, try .markdown-source-view (source mode)
-		if (!container) {
-			container = viewContent.querySelector('.markdown-source-view') as HTMLElement;
-		}
-		
-		// If still not found, try .markdown-reading-view (reading mode)
-		if (!container) {
-			container = viewContent.querySelector('.markdown-reading-view') as HTMLElement;
-		}
-		
-		// Last resort: find the editor content area within viewContent
-		if (!container) {
-			// Look for any element with class containing 'editor' or 'content'
 			const editorArea = viewContent.querySelector('[class*="editor"], [class*="content"]') as HTMLElement;
-			if (editorArea) {
-				container = editorArea;
-			}
+			if (editorArea) container = editorArea;
 		}
-		
-		// Final fallback: use viewContent but only if we can't find anything else
-		if (!container) {
-			console.log('showLockOverlay: Could not find editor container, using viewContent');
-			container = viewContent;
-		}
-		
-		// Ensure container has relative positioning and creates a stacking context
-		if (container) {
-			const computedStyle = getComputedStyle(container);
-			if (computedStyle.position === 'static') {
-				container.style.position = 'relative';
-			}
-			// Create a stacking context to isolate the overlay from affecting other UI elements
-			container.style.isolation = 'isolate';
-			// Ensure the container doesn't have transform or filter that could affect other elements
-			container.style.willChange = 'auto';
-		}
+		if (!container) container = viewContent;
 		
 		if (!container) {
-			console.log('showLockOverlay: Could not find container');
 			return;
 		}
 
-		// Create overlay element
-		const overlay = document.createElement('div');
-		overlay.className = 'lockdown-overlay';
-		overlay.setAttribute('data-file-path', filePath);
-
-		// Create lock icon
-		const lockIcon = document.createElement('div');
-		lockIcon.className = 'lockdown-overlay-icon';
-		lockIcon.textContent = this.settings.lockIcon || '🔒';
+		this.lockOverlayManager.show(
+			filePath,
+			container,
+			this.settings.lockIcon,
+			async () => await this.unlockFile(filePath)
+		);
 		
-		// Create message
-		const message = document.createElement('div');
-		message.className = 'lockdown-overlay-message';
-		message.textContent = 'This note is locked';
-
-		// Create unlock button
-		const unlockButton = document.createElement('button');
-		unlockButton.className = 'lockdown-overlay-button';
-		unlockButton.textContent = 'Unlock';
-		unlockButton.onclick = async () => {
-			await this.unlockFile(filePath);
-		};
-
-		overlay.appendChild(lockIcon);
-		overlay.appendChild(message);
-		overlay.appendChild(unlockButton);
-
-		// Append overlay to container
-		container.appendChild(overlay);
-		this.lockOverlays.set(filePath, overlay);
-	}
-
-	/**
-	 * Remove lock overlay for a file
-	 */
-	removeLockOverlay(filePath: string): void {
-		const overlay = this.lockOverlays.get(filePath);
+		const overlay = document.querySelector(`.lockdown-overlay[data-file-path="${filePath}"]`) as HTMLElement;
 		if (overlay) {
-			// Clean up container styles that were set for the overlay
-			const container = overlay.parentElement;
-			if (container) {
-				// Reset isolation style to prevent lingering stacking context issues
-				// Only reset if we set it (check if it's 'isolate')
-				if (container.style.isolation === 'isolate') {
-					container.style.isolation = '';
-				}
-			}
-			overlay.remove();
-			this.lockOverlays.delete(filePath);
+			this.lockOverlays.set(filePath, overlay);
 		}
-
-		// Also remove any orphaned overlays
-		const orphanedOverlays = document.querySelectorAll(`.lockdown-overlay[data-file-path="${filePath}"]`);
-		orphanedOverlays.forEach(el => {
-			// Clean up parent container styles
-			const container = el.parentElement;
-			if (container && container.style.isolation === 'isolate') {
-				container.style.isolation = '';
-			}
-			el.remove();
-		});
 	}
 
-	/**
-	 * Remove all lock overlays
-	 */
+	removeLockOverlay(filePath: string): void {
+		this.lockOverlayManager.remove(filePath);
+		this.lockOverlays.delete(filePath);
+	}
+
 	removeAllLockOverlays(): void {
-		this.lockOverlays.forEach((overlay) => {
-			// Clean up container styles
-			const container = overlay.parentElement;
-			if (container && container.style.isolation === 'isolate') {
-				container.style.isolation = '';
-			}
-			overlay.remove();
-		});
+		this.lockOverlayManager.removeAll();
 		this.lockOverlays.clear();
-		
-		// Also remove any orphaned overlays
-		const allOverlays = document.querySelectorAll('.lockdown-overlay');
-		allOverlays.forEach(el => {
-			// Clean up parent container styles
-			const container = el.parentElement;
-			if (container && container.style.isolation === 'isolate') {
-				container.style.isolation = '';
-			}
-			el.remove();
-		});
 	}
 
 	/**
@@ -1324,264 +1037,33 @@ export default class LockdownPlugin extends Plugin {
 		return this.statusBarEl;
 	}
 
-	/**
-	 * Update file explorer indicators for locked files and folders
-	 * Uses double requestAnimationFrame to ensure DOM is stable before updating
-	 */
 	updateFileExplorerIndicators(): void {
 		if (!this.settings.showFileExplorerIndicators) {
 			this.removeAllFileExplorerIndicators();
 			return;
 		}
 
-		// Use double requestAnimationFrame to ensure DOM is completely stable
-		requestAnimationFrame(() => {
-			requestAnimationFrame(() => {
-				// Find all file items in the file explorer
-				const fileExplorer = document.querySelector('.nav-files-container');
-				if (!fileExplorer) return;
-
-				// Get current locked files and folders
-				const currentLockedFiles = new Set(this.lockedFiles);
-				const currentLockedFolders = new Set(this.lockedFolders);
-				
-				// Find all existing indicators to see what needs to be removed
-				const existingFileIndicators = Array.from(document.querySelectorAll('.lockdown-file-indicator'));
-				const existingFolderIndicators = Array.from(document.querySelectorAll('.lockdown-folder-indicator'));
-				
-				// Remove indicators for files/folders that are no longer locked
-				// Use a document fragment to batch removals
-				existingFileIndicators.forEach(indicator => {
-					const fileItem = indicator.closest('[data-path]') as HTMLElement;
-					if (fileItem) {
-						const filePath = fileItem.getAttribute('data-path');
-						if (filePath && !this.isFileLocked(filePath)) {
-							// Remove with a small delay to prevent style recalculation
-							setTimeout(() => {
-								if (indicator.parentNode) {
-									indicator.remove();
-								}
-							}, 0);
-						}
-					}
-				});
-				
-				existingFolderIndicators.forEach(indicator => {
-					const folderItem = indicator.closest('[data-path]') as HTMLElement;
-					if (folderItem) {
-						const folderPath = folderItem.getAttribute('data-path');
-						if (folderPath && !this.lockedFolders.has(folderPath)) {
-							// Remove with a small delay to prevent style recalculation
-							setTimeout(() => {
-								if (indicator.parentNode) {
-									indicator.remove();
-								}
-							}, 0);
-						}
-					}
-				});
-
-				// Add indicators for locked files (only if they don't exist)
-				// Use setTimeout to defer additions
-				setTimeout(() => {
-					currentLockedFiles.forEach(filePath => {
-						const existingIndicator = document.querySelector(`[data-path="${filePath}"] .lockdown-file-indicator`);
-						if (!existingIndicator) {
-							this.addFileExplorerIndicator(filePath);
-						}
-					});
-
-					// Add indicators for files in locked folders
-					const allFiles = this.app.vault.getMarkdownFiles();
-					allFiles.forEach(file => {
-						if (this.isFileLocked(file.path) && !currentLockedFiles.has(file.path)) {
-							const existingIndicator = document.querySelector(`[data-path="${file.path}"] .lockdown-file-indicator`);
-							if (!existingIndicator) {
-								this.addFileExplorerIndicator(file.path);
-							}
-						}
-					});
-
-					// Add indicators for locked folders (only if they don't exist)
-					currentLockedFolders.forEach(folderPath => {
-						const existingIndicator = document.querySelector(`[data-path="${folderPath}"] .lockdown-folder-indicator`);
-						if (!existingIndicator) {
-							this.addFolderExplorerIndicator(folderPath);
-						}
-					});
-				}, 50);
-			});
+		const allFiles = this.app.vault.getMarkdownFiles();
+		const filesInLockedFolders = new Set<string>();
+		allFiles.forEach(file => {
+			if (this.isFileLocked(file.path) && !this.lockedFiles.has(file.path)) {
+				filesInLockedFolders.add(file.path);
+			}
 		});
+
+		const allLockedFiles = new Set([...this.lockedFiles, ...filesInLockedFolders]);
+
+		this.fileExplorerIndicatorsManager.updateAll(
+			allLockedFiles,
+			this.lockedFolders,
+			this.settings.lockIcon,
+			(path) => this.passwordHashes.has(path)
+		);
 	}
 
-	/**
-	 * Add lock indicator to a folder in the file explorer
-	 */
-	addFolderExplorerIndicator(folderPath: string): void {
-		// Try multiple selectors for folder items
-		const selectors = [
-			'.nav-folder-title[data-path]',
-			'.nav-folder-title',
-			'.tree-item-inner[data-path]'
-		];
-
-		for (const selector of selectors) {
-			const folderItems = document.querySelectorAll(selector);
-			
-			for (const item of Array.from(folderItems)) {
-				const titleEl = item as HTMLElement;
-				const folderTitle = titleEl.getAttribute('data-path') || 
-								   titleEl.textContent?.trim() ||
-								   titleEl.closest('[data-path]')?.getAttribute('data-path');
-				
-				if (folderTitle === folderPath) {
-					// Check if indicator already exists
-					if (titleEl.querySelector('.lockdown-folder-indicator') || 
-						titleEl.parentElement?.querySelector('.lockdown-folder-indicator')) {
-						return;
-					}
-
-					// Create indicator element
-					const indicator = document.createElement('span');
-					indicator.className = 'lockdown-folder-indicator';
-					indicator.textContent = this.settings.lockIcon || '🔒';
-					indicator.title = 'Locked folder';
-					indicator.style.marginLeft = '4px';
-					indicator.style.opacity = '0.8';
-					// Ensure indicator doesn't affect parent styling
-					indicator.style.background = 'transparent';
-					indicator.style.backgroundColor = 'transparent';
-					// CRITICAL: Don't capture pointer events - let hover pass through to parent
-					indicator.style.pointerEvents = 'none';
-
-					// Insert indicator using requestAnimationFrame to prevent glitching
-					requestAnimationFrame(() => {
-						const targetEl = titleEl.querySelector('.nav-folder-title-content') || titleEl;
-						if (targetEl && !targetEl.querySelector('.lockdown-folder-indicator')) {
-							targetEl.appendChild(indicator);
-						}
-					});
-					break;
-				}
-			}
-		}
-	}
-
-	/**
-	 * Add lock indicator to a file in the file explorer
-	 */
-	addFileExplorerIndicator(filePath: string): void {
-		// Try multiple selectors for file explorer items
-		const selectors = [
-			'.nav-file-title[data-path]',
-			'.nav-file-title-content',
-			'.tree-item-inner[data-path]',
-			'.nav-file-title'
-		];
-
-		for (const selector of selectors) {
-			const fileItems = document.querySelectorAll(selector);
-			
-			for (const item of Array.from(fileItems)) {
-				const titleEl = item as HTMLElement;
-				const fileTitle = titleEl.getAttribute('data-path') || 
-								  titleEl.textContent?.trim() ||
-								  titleEl.closest('[data-path]')?.getAttribute('data-path');
-				
-				if (fileTitle === filePath) {
-					// Check if indicator already exists
-					if (titleEl.querySelector('.lockdown-file-indicator') || 
-						titleEl.parentElement?.querySelector('.lockdown-file-indicator')) {
-						return;
-					}
-
-					// Create indicator element
-					const indicator = document.createElement('span');
-					indicator.className = 'lockdown-file-indicator';
-					indicator.textContent = this.settings.lockIcon || '🔒';
-					indicator.title = 'Locked file';
-					indicator.style.marginLeft = '4px';
-					indicator.style.opacity = '0.7';
-					// Ensure indicator doesn't affect parent styling
-					indicator.style.background = 'transparent';
-					indicator.style.backgroundColor = 'transparent';
-					// CRITICAL: Don't capture pointer events - let hover pass through to parent
-					indicator.style.pointerEvents = 'none';
-					
-					// Check if file is encrypted
-					const isEncrypted = this.passwordHashes.has(filePath);
-					if (isEncrypted) {
-						indicator.title = 'Locked and encrypted file';
-						indicator.style.opacity = '1';
-					}
-
-					// Insert indicator using requestAnimationFrame to prevent glitching
-					requestAnimationFrame(() => {
-						const targetEl = titleEl.querySelector('.nav-file-title-content') || titleEl;
-						if (targetEl && !targetEl.querySelector('.lockdown-file-indicator')) {
-							targetEl.appendChild(indicator);
-							this.fileExplorerIndicators.set(filePath, indicator);
-						}
-					});
-					return;
-				}
-			}
-		}
-	}
-
-	/**
-	 * Remove file explorer indicator for a specific file
-	 */
-	removeFileExplorerIndicator(filePath: string): void {
-		const indicator = this.fileExplorerIndicators.get(filePath);
-		if (indicator) {
-			indicator.remove();
-			this.fileExplorerIndicators.delete(filePath);
-		}
-
-		// Also remove any orphaned indicators
-		const fileItems = document.querySelectorAll('.nav-file-title');
-		for (const item of Array.from(fileItems)) {
-			const titleEl = item as HTMLElement;
-			const fileTitle = titleEl.getAttribute('data-path');
-			if (fileTitle === filePath) {
-				const orphaned = titleEl.querySelector('.lockdown-file-indicator');
-				if (orphaned) {
-					orphaned.remove();
-				}
-			}
-		}
-	}
-
-	/**
-	 * Remove all file explorer indicators
-	 */
 	removeAllFileExplorerIndicators(): void {
-		// Use requestAnimationFrame to batch DOM updates
-		requestAnimationFrame(() => {
-			// Remove from tracked map
-			this.fileExplorerIndicators.forEach((indicator) => {
-				if (indicator && indicator.parentNode) {
-					indicator.remove();
-				}
-			});
-			this.fileExplorerIndicators.clear();
-
-			// Also remove any orphaned indicators (files and folders)
-			const orphanedFiles = document.querySelectorAll('.lockdown-file-indicator');
-			orphanedFiles.forEach(el => {
-				if (el.parentNode) {
-					el.remove();
-				}
-			});
-			
-			const orphanedFolders = document.querySelectorAll('.lockdown-folder-indicator');
-			orphanedFolders.forEach(el => {
-				if (el.parentNode) {
-					el.remove();
-				}
-			});
-		});
+		this.fileExplorerIndicatorsManager.removeAll();
+		this.fileExplorerIndicators.clear();
 	}
 
 	/**
@@ -2054,13 +1536,13 @@ export default class LockdownPlugin extends Plugin {
 		const lockdownViewPlugin = ViewPlugin.fromClass(
 			class {
 				private updateTimeout: number | null = null;
-				private isUpdating: boolean = false;
+				private isUpdating = false;
 
-				constructor(view: EditorView) {
-					// Don't update in constructor - let the update() method handle it
-				}
+			constructor(private view: EditorView) {
+				// Don't update in constructor - let the update() method handle it
+			}
 
-				update(update: ViewUpdate) {
+			update(update: ViewUpdate) {
 					// Update lock state when file changes
 					// Use a longer delay to ensure we're outside any update cycle
 					if (this.updateTimeout) {
@@ -2106,48 +1588,48 @@ export default class LockdownPlugin extends Plugin {
 									// Schedule async read, then update state
 									plugin.app.vault.read(activeFile).then(content => {
 										// Use multiple requestAnimationFrame calls to ensure we're safe
+						requestAnimationFrame(() => {
+							requestAnimationFrame(() => {
+								try {
+									if (!this.view.dom.isConnected) {
+										this.isUpdating = false;
+										return;
+									}
+									
+									this.view.dispatch({
+										effects: setLockedEffect.of({ locked: true, content })
+									});
+									
+									// Restore content if needed (defer this too)
+									requestAnimationFrame(() => {
 										requestAnimationFrame(() => {
-											requestAnimationFrame(() => {
-												try {
-													if (!view.dom.isConnected) {
-														this.isUpdating = false;
-														return;
-													}
-													
-													view.dispatch({
-														effects: setLockedEffect.of({ locked: true, content })
-													});
-													
-													// Restore content if needed (defer this too)
-													requestAnimationFrame(() => {
-														requestAnimationFrame(() => {
-															try {
-																if (!view.dom.isConnected) {
-																	this.isUpdating = false;
-																	return;
-																}
-																
-																const currentContent = view.state.doc.toString();
-																if (currentContent !== content) {
-																	view.dispatch({
-																		changes: {
-																			from: 0,
-																			to: view.state.doc.length,
-																			insert: content
-																		}
-																	});
-																}
-																this.isUpdating = false;
-															} catch (error) {
-																console.error('Error updating locked content:', error);
-																this.isUpdating = false;
-															}
-														});
-													});
-												} catch (error) {
-													console.error('Error updating lock state:', error);
+											try {
+												if (!this.view.dom.isConnected) {
 													this.isUpdating = false;
+													return;
 												}
+												
+												const currentContent = this.view.state.doc.toString();
+												if (currentContent !== content) {
+													this.view.dispatch({
+														changes: {
+															from: 0,
+															to: this.view.state.doc.length,
+															insert: content
+														}
+													});
+												}
+												this.isUpdating = false;
+											} catch (error) {
+												console.error('Error updating locked content:', error);
+												this.isUpdating = false;
+											}
+										});
+									});
+								} catch (error) {
+									console.error('Error updating lock state:', error);
+									this.isUpdating = false;
+								}
 											});
 										});
 									}).catch(error => {
@@ -2159,11 +1641,11 @@ export default class LockdownPlugin extends Plugin {
 									requestAnimationFrame(() => {
 										requestAnimationFrame(() => {
 											try {
-												if (!view.dom.isConnected) {
+												if (!this.view.dom.isConnected) {
 													this.isUpdating = false;
 													return;
 												}
-												view.dispatch({
+												this.view.dispatch({
 													effects: setLockedEffect.of({ locked: false, content: '' })
 												});
 												this.isUpdating = false;
@@ -2178,17 +1660,17 @@ export default class LockdownPlugin extends Plugin {
 								this.isUpdating = false;
 							}
 						} else {
-							const state = view.state.field(lockdownState);
+							const state = this.view.state.field(lockdownState);
 							if (state.locked || state.filePath !== null) {
 								// Defer this dispatch too
 								requestAnimationFrame(() => {
 									requestAnimationFrame(() => {
 										try {
-											if (!view.dom.isConnected) {
+											if (!this.view.dom.isConnected) {
 												this.isUpdating = false;
 												return;
 											}
-											view.dispatch({
+											this.view.dispatch({
 												effects: setLockedEffect.of({ locked: false, content: '' })
 											});
 											this.isUpdating = false;
@@ -2224,17 +1706,17 @@ export default class LockdownPlugin extends Plugin {
 					const newContent = tr.newDoc.toString();
 					if (newContent !== state.originalContent && state.originalContent) {
 						// Block the transaction and restore original content
-						// Use requestAnimationFrame to defer the restoration
+					// Use requestAnimationFrame to defer the restoration
+					requestAnimationFrame(() => {
 						requestAnimationFrame(() => {
-							requestAnimationFrame(() => {
-								try {
-									const view = tr.startState.field(lockdownState, false);
-									// Actually, we can't access the view here, so just return the blocked transaction
-								} catch (e) {
-									// Ignore
-								}
-							});
+							try {
+								const _view = tr.startState.field(lockdownState, false);
+								// Actually, we can't access the view here, so just return the blocked transaction
+							} catch (e) {
+								// Ignore
+							}
 						});
+					});
 						
 						return {
 							changes: {
@@ -2256,244 +1738,22 @@ export default class LockdownPlugin extends Plugin {
 	}
 
 	async showConfirmationDialog(message: string): Promise<boolean> {
-		return new Promise((resolve) => {
-			const modal = new class extends Modal {
-				onOpen() {
-					this.contentEl.addClass('lockdown-modal');
-					
-					// Title with icon
-					const titleContainer = this.contentEl.createDiv({ cls: 'lockdown-modal-title-container' });
-					titleContainer.createSpan({ text: '🔒', cls: 'lockdown-modal-icon' });
-					titleContainer.createEl('h2', { text: 'Lockdown', cls: 'lockdown-modal-title' });
-					
-					// Message
-					this.contentEl.createEl('p', { text: message, cls: 'lockdown-modal-message' });
-					
-					// Buttons
-					this.contentEl.createDiv({ cls: 'lockdown-modal-button-container' }, (container) => {
-						const cancelBtn = container.createEl('button', { text: 'Cancel', cls: 'lockdown-modal-button lockdown-modal-button-secondary' });
-						cancelBtn.onClickEvent(() => {
-							resolve(false);
-							this.close();
-						});
-						
-						const confirmBtn = container.createEl('button', { text: 'Confirm', cls: 'lockdown-modal-button lockdown-modal-button-primary' });
-						confirmBtn.onClickEvent(() => {
-							resolve(true);
-							this.close();
-						});
-					});
-				}
-			}(this.app);
-			modal.open();
-		});
+		const modal = new ConfirmationModal(this.app, message);
+		return await modal.confirm();
 	}
 
-	/**
-	 * Calculate password strength score (0-100)
-	 */
 	calculatePasswordStrength(password: string): { score: number; feedback: string } {
-		let score = 0;
-		const feedback: string[] = [];
-
-		if (password.length === 0) {
-			return { score: 0, feedback: 'Enter a password' };
-		}
-
-		// Length checks
-		if (password.length >= 8) score += 20;
-		else feedback.push('Use at least 8 characters');
-		
-		if (password.length >= 12) score += 10;
-		if (password.length >= 16) score += 10;
-
-		// Character variety
-		if (/[a-z]/.test(password)) score += 10;
-		else feedback.push('Add lowercase letters');
-		
-		if (/[A-Z]/.test(password)) score += 10;
-		else feedback.push('Add uppercase letters');
-		
-		if (/[0-9]/.test(password)) score += 10;
-		else feedback.push('Add numbers');
-		
-		if (/[^a-zA-Z0-9]/.test(password)) score += 10;
-		else feedback.push('Add special characters');
-
-		// Common patterns (penalize)
-		if (/(.)\1{2,}/.test(password)) {
-			score -= 10;
-			feedback.push('Avoid repeated characters');
-		}
-
-		// Common words (penalize)
-		const commonWords = ['password', '123456', 'qwerty', 'admin', 'letmein'];
-		if (commonWords.some(word => password.toLowerCase().includes(word))) {
-			score -= 20;
-			feedback.push('Avoid common words');
-		}
-
-		score = Math.max(0, Math.min(100, score));
-
-		let strengthText = '';
-		if (score < 30) strengthText = 'Weak';
-		else if (score < 60) strengthText = 'Fair';
-		else if (score < 80) strengthText = 'Good';
-		else strengthText = 'Strong';
-
-		return {
-			score,
-			feedback: feedback.length > 0 ? `${strengthText}. ${feedback[0]}` : strengthText
-		};
+		return this.passwordStrengthCalculator.calculate(password);
 	}
 
 	async promptPassword(message: string, isNewPassword: boolean): Promise<string | undefined> {
-		const plugin = this;
-		return new Promise((resolve) => {
-			const modal = new class extends Modal {
-				passwordInput: HTMLInputElement;
-				confirmInput: HTMLInputElement | null = null;
-				confirmBtn: HTMLButtonElement;
-				strengthMeter: HTMLElement | null = null;
-				strengthText: HTMLElement | null = null;
-
-				onOpen() {
-					this.contentEl.addClass('lockdown-modal', 'lockdown-password-modal');
-					
-					// Title with icon
-					const titleContainer = this.contentEl.createDiv({ cls: 'lockdown-modal-title-container' });
-					titleContainer.createSpan({ text: '🔐', cls: 'lockdown-modal-icon' });
-					titleContainer.createEl('h2', { text: 'Password Required', cls: 'lockdown-modal-title' });
-					
-					// Message
-					this.contentEl.createEl('p', { text: message, cls: 'lockdown-modal-message' });
-					
-					// Password input container
-					const passwordContainer = this.contentEl.createDiv({ cls: 'lockdown-input-container' });
-					const passwordLabel = passwordContainer.createEl('label', { 
-						text: 'Password', 
-						attr: { for: 'lockdown-password' },
-						cls: 'lockdown-input-label'
-					});
-					this.passwordInput = passwordContainer.createEl('input', {
-						type: 'password',
-						attr: { id: 'lockdown-password', placeholder: 'Enter your password' },
-						cls: 'lockdown-password-input'
-					});
-
-					// Password strength indicator (only for new passwords)
-					if (isNewPassword) {
-						const strengthContainer = passwordContainer.createDiv({ cls: 'lockdown-password-strength-container' });
-						const strengthBarContainer = strengthContainer.createDiv({ cls: 'lockdown-password-strength-bar-container' });
-						this.strengthMeter = strengthBarContainer.createDiv({ cls: 'lockdown-password-strength-meter' });
-						this.strengthText = strengthContainer.createDiv({ cls: 'lockdown-password-strength-text' });
-						
-						this.passwordInput.oninput = () => {
-							const password = this.passwordInput.value;
-							const strength = plugin.calculatePasswordStrength(password);
-							this.updateStrengthIndicator(strength);
-						};
-					}
-					
-					// Confirm password input (only for new passwords)
-					if (isNewPassword) {
-						const confirmContainer = this.contentEl.createDiv({ cls: 'lockdown-input-container' });
-						const confirmLabel = confirmContainer.createEl('label', { 
-							text: 'Confirm Password', 
-							attr: { for: 'lockdown-confirm' },
-							cls: 'lockdown-input-label'
-						});
-						this.confirmInput = confirmContainer.createEl('input', {
-							type: 'password',
-							attr: { id: 'lockdown-confirm', placeholder: 'Re-enter your password' },
-							cls: 'lockdown-password-input'
-						});
-					}
-					
-					// Buttons
-					this.contentEl.createDiv({ cls: 'lockdown-modal-button-container' }, (container) => {
-						const cancelBtn = container.createEl('button', { 
-							text: 'Cancel', 
-							cls: 'lockdown-modal-button lockdown-modal-button-secondary'
-						});
-						cancelBtn.onClickEvent(() => {
-							resolve(undefined);
-							this.close();
-						});
-						
-						this.confirmBtn = container.createEl('button', { 
-							text: 'Confirm', 
-							cls: 'lockdown-modal-button lockdown-modal-button-primary'
-						});
-						this.confirmBtn.onClickEvent(() => {
-							const password = this.passwordInput.value;
-							if (!password) {
-								new Notice('Password cannot be empty');
-								return;
-							}
-							if (isNewPassword && this.confirmInput && password !== this.confirmInput.value) {
-								new Notice('Passwords do not match');
-								return;
-							}
-							resolve(password);
-							this.close();
-						});
-					});
-					
-					// Focus password input and handle Enter key
-					this.passwordInput.focus();
-					this.passwordInput.onkeydown = (e) => {
-						if (e.key === 'Enter') {
-							if (isNewPassword && this.confirmInput) {
-								this.confirmInput.focus();
-							} else {
-								this.confirmBtn.click();
-							}
-						}
-					};
-					if (this.confirmInput) {
-						this.confirmInput.onkeydown = (e) => {
-							if (e.key === 'Enter') {
-								this.confirmBtn.click();
-							}
-						};
-					}
-				}
-
-				updateStrengthIndicator(strength: { score: number; feedback: string }) {
-					if (!this.strengthMeter || !this.strengthText) return;
-
-					// Update meter width and color
-					this.strengthMeter.style.width = `${strength.score}%`;
-					
-					// Update color based on strength
-					this.strengthMeter.className = 'lockdown-password-strength-meter';
-					if (strength.score < 30) {
-						this.strengthMeter.classList.add('strength-weak');
-					} else if (strength.score < 60) {
-						this.strengthMeter.classList.add('strength-fair');
-					} else if (strength.score < 80) {
-						this.strengthMeter.classList.add('strength-good');
-					} else {
-						this.strengthMeter.classList.add('strength-strong');
-					}
-
-					// Update text
-					this.strengthText.textContent = strength.feedback;
-					this.strengthText.className = 'lockdown-password-strength-text';
-					if (strength.score < 30) {
-						this.strengthText.classList.add('strength-weak');
-					} else if (strength.score < 60) {
-						this.strengthText.classList.add('strength-fair');
-					} else if (strength.score < 80) {
-						this.strengthText.classList.add('strength-good');
-					} else {
-						this.strengthText.classList.add('strength-strong');
-					}
-				}
-			}(this.app);
-			modal.open();
-		});
+		const modal = new PasswordPromptModal(
+			this.app,
+			message,
+			isNewPassword,
+			this.passwordStrengthCalculator
+		);
+		return await modal.prompt();
 	}
 }
 
@@ -2552,7 +1812,7 @@ class LockedFilesManagerModal extends Modal {
 
 		let currentTab: 'files' | 'folders' = 'files';
 
-		const renderFiles = (filter: string = '') => {
+		const renderFiles = (filter = '') => {
 			filesList.empty();
 			
 			if (currentTab === 'files') {
@@ -2574,7 +1834,7 @@ class LockedFilesManagerModal extends Modal {
 				nameEl.title = filePath;
 				
 				// File path (smaller)
-				const pathEl = fileItem.createEl('div', { cls: 'lockdown-file-path', text: filePath });
+				fileItem.createEl('div', { cls: 'lockdown-file-path', text: filePath });
 				
 				// Status indicators
 				const statusEl = fileItem.createDiv({ cls: 'lockdown-file-status' });
@@ -2627,7 +1887,7 @@ class LockedFilesManagerModal extends Modal {
 					nameEl.title = folderPath;
 					
 					// Folder path (smaller)
-					const pathEl = folderItem.createEl('div', { cls: 'lockdown-file-path', text: folderPath });
+					folderItem.createEl('div', { cls: 'lockdown-file-path', text: folderPath });
 					
 					// Status indicators
 					const statusEl = folderItem.createDiv({ cls: 'lockdown-file-status' });
