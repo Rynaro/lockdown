@@ -1591,12 +1591,12 @@ export default class LockdownPlugin extends Plugin {
 						requestAnimationFrame(() => {
 							requestAnimationFrame(() => {
 								try {
-									if (!editorView.dom.isConnected) {
+									if (!this.view.dom.isConnected) {
 										this.isUpdating = false;
 										return;
 									}
 									
-									editorView.dispatch({
+									this.view.dispatch({
 										effects: setLockedEffect.of({ locked: true, content })
 									});
 									
@@ -1604,86 +1604,86 @@ export default class LockdownPlugin extends Plugin {
 									requestAnimationFrame(() => {
 										requestAnimationFrame(() => {
 											try {
-												if (!editorView.dom.isConnected) {
+												if (!this.view.dom.isConnected) {
 													this.isUpdating = false;
 													return;
 												}
 												
-												const currentContent = editorView.state.doc.toString();
+												const currentContent = this.view.state.doc.toString();
 												if (currentContent !== content) {
-													editorView.dispatch({
+													this.view.dispatch({
 														changes: {
 															from: 0,
-															to: editorView.state.doc.length,
+															to: this.view.state.doc.length,
 															insert: content
 														}
 													});
 												}
 												this.isUpdating = false;
-							} catch (error) {
-								console.error('Error updating locked content:', error);
-								this.isUpdating = false;
-							}
-						});
-					});
-				} catch (error) {
-					console.error('Error updating lock state:', error);
-					this.isUpdating = false;
-				}
-					});
-				});
-			}).catch(error => {
-				console.error('Failed to read file for lock state:', error);
-				this.isUpdating = false;
-			});
-		} else {
-			// Not locked - update immediately (synchronously)
-			requestAnimationFrame(() => {
-				requestAnimationFrame(() => {
-					try {
-						if (!editorView.dom.isConnected) {
-							this.isUpdating = false;
-							return;
-						}
-						editorView.dispatch({
-							effects: setLockedEffect.of({ locked: false, content: '' })
-						});
-						this.isUpdating = false;
-					} catch (error) {
-						console.error('Error updating lock state:', error);
-						this.isUpdating = false;
-					}
-				});
-			});
-		}
+											} catch (error) {
+												console.error('Error updating locked content:', error);
+												this.isUpdating = false;
+											}
+										});
+									});
+								} catch (error) {
+									console.error('Error updating lock state:', error);
+									this.isUpdating = false;
+								}
+											});
+										});
+									}).catch(error => {
+										console.error('Failed to read file for lock state:', error);
+										this.isUpdating = false;
+									});
+								} else {
+									// Not locked - update immediately (synchronously)
+									requestAnimationFrame(() => {
+										requestAnimationFrame(() => {
+											try {
+												if (!this.view.dom.isConnected) {
+													this.isUpdating = false;
+													return;
+												}
+												this.view.dispatch({
+													effects: setLockedEffect.of({ locked: false, content: '' })
+												});
+												this.isUpdating = false;
+											} catch (error) {
+												console.error('Error updating lock state:', error);
+												this.isUpdating = false;
+											}
+										});
+									});
+								}
 							} else {
 								this.isUpdating = false;
 							}
-				} else {
-					const state = editorView.state.field(lockdownState);
-					if (state.locked || state.filePath !== null) {
-						// Defer this dispatch too
-						requestAnimationFrame(() => {
-							requestAnimationFrame(() => {
-								try {
-									if (!editorView.dom.isConnected) {
-										this.isUpdating = false;
-										return;
-									}
-									editorView.dispatch({
-										effects: setLockedEffect.of({ locked: false, content: '' })
+						} else {
+							const state = this.view.state.field(lockdownState);
+							if (state.locked || state.filePath !== null) {
+								// Defer this dispatch too
+								requestAnimationFrame(() => {
+									requestAnimationFrame(() => {
+										try {
+											if (!this.view.dom.isConnected) {
+												this.isUpdating = false;
+												return;
+											}
+											this.view.dispatch({
+												effects: setLockedEffect.of({ locked: false, content: '' })
+											});
+											this.isUpdating = false;
+										} catch (error) {
+											console.error('Error clearing lock state:', error);
+											this.isUpdating = false;
+										}
 									});
-									this.isUpdating = false;
-								} catch (error) {
-									console.error('Error clearing lock state:', error);
-									this.isUpdating = false;
-								}
-							});
-						});
-					} else {
-						this.isUpdating = false;
-					}
-				}
+								});
+							} else {
+								this.isUpdating = false;
+							}
+						}
 					} catch (error) {
 						console.error('Error in updateLockState:', error);
 						this.isUpdating = false;
