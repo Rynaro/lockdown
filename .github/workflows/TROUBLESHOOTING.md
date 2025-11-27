@@ -31,7 +31,33 @@ And made PR comments non-blocking with `continue-on-error: true`.
 2. Ensure "Read and write permissions" is enabled
 3. Or enable "Allow GitHub Actions to create and approve pull requests"
 
-### 2. Workflow doesn't run on PR
+### 2. fatal: ambiguous argument 'origin/main..HEAD'
+
+**Error:**
+```
+fatal: ambiguous argument 'origin/main..HEAD': unknown revision or path not in the working tree.
+Error: Process completed with exit code 128.
+```
+
+**Cause:** Shallow checkout doesn't have full git history.
+
+**Solution:** ✅ Fixed in workflows
+
+Set `fetch-depth: 0` to get full history:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0  # 0 = full history
+```
+
+And fetch base branch explicitly:
+
+```yaml
+git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+```
+
+### 3. Workflow doesn't run on PR
 
 **Cause:** Workflow permissions or branch protection.
 
@@ -40,7 +66,7 @@ And made PR comments non-blocking with `continue-on-error: true`.
 - Verify `on: pull_request:` trigger is correct
 - Check repository → Settings → Actions → General
 
-### 3. ESLint fails with "Cannot find module"
+### 4. ESLint fails with "Cannot find module"
 
 **Cause:** Dependencies not installed correctly.
 
@@ -52,7 +78,7 @@ And made PR comments non-blocking with `continue-on-error: true`.
 
 We use `npm ci` instead of `npm install` for reproducible builds.
 
-### 4. Type check fails
+### 5. Type check fails
 
 **Cause:** TypeScript compilation errors.
 
@@ -65,7 +91,7 @@ tsc -noEmit
 
 **Fix:** Resolve TypeScript errors in code.
 
-### 5. Architecture rule violations
+### 6. Architecture rule violations
 
 **Error:**
 ```
@@ -81,7 +107,7 @@ Move code to appropriate layer:
 - Infrastructure → Can import core, application
 - UI → Can import all layers
 
-### 6. Workflow times out
+### 7. Workflow times out
 
 **Cause:** Long-running operation or infinite loop.
 
@@ -96,7 +122,7 @@ jobs:
     timeout-minutes: 10  # Add this
 ```
 
-### 7. Cache not working
+### 8. Cache not working
 
 **Symptom:** Slow npm install every time.
 
@@ -111,7 +137,7 @@ jobs:
 - Check if `package-lock.json` is committed
 - Verify `npm ci` is used (not `npm install`)
 
-### 8. Artifacts not uploading
+### 9. Artifacts not uploading
 
 **Check:**
 - Artifact name is unique
@@ -123,7 +149,7 @@ jobs:
   if: always()  # Upload even if previous steps fail
 ```
 
-### 9. Summary not showing
+### 10. Summary not showing
 
 **Symptom:** `$GITHUB_STEP_SUMMARY` not appearing.
 
@@ -139,7 +165,7 @@ Check for:
 - Valid markdown
 - No binary data
 
-### 10. Secrets not working
+### 11. Secrets not working
 
 **Symptom:** `GITHUB_TOKEN` is undefined.
 
