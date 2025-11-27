@@ -1,6 +1,6 @@
 import { Plugin, PluginSettingTab, Setting, TFile, TFolder, Notice, MarkdownView, Modal, App } from 'obsidian';
 import { EditorView, ViewUpdate, ViewPlugin } from '@codemirror/view';
-import { StateField, StateEffect } from '@codemirror/state';
+import { StateField } from '@codemirror/state';
 import { EditorState } from '@codemirror/state';
 
 import { Pbkdf2KeyDeriver } from './src/core/crypto/Pbkdf2KeyDeriver';
@@ -62,6 +62,7 @@ export default class LockdownPlugin extends Plugin {
 	private isUnlocking = false;
 	private isLocking: Set<string> = new Set();
 	private activeLeafChangeTimeout: number | null = null;
+	private _lastLockNotice: number = 0;
 
 	private encryptionService: EncryptionService;
 	private lockFileUseCase: LockFileUseCase;
@@ -266,7 +267,7 @@ export default class LockdownPlugin extends Plugin {
 									const password = this.filePasswords.get(file.path);
 									if (password) {
 										try {
-											const encryptedContent = await this.encryptContent(content, password);
+											const encryptedContent = await this.encryptContent(content, password, file.path);
 											
 											// Verify the encrypted content doesn't already exist in the file
 											// (safety check to prevent duplication)
@@ -334,13 +335,10 @@ export default class LockdownPlugin extends Plugin {
 						return; // Overlay already exists, don't recreate
 					}
 						
-						// Clear editor content to hide encrypted data
-						// We do this regardless of whether it's actually encrypted on disk
-						// to prevent any flash of content
-						const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-						if (view && view.file === file) {
-							view.editor.setValue('');
-						}
+						// DO NOT call editor.setValue('') here!
+						// That would trigger Obsidian to sync the empty content to disk,
+						// overwriting the encrypted content. Instead, just show the overlay
+						// which will cover the encrypted gibberish in the editor.
 						
 						// Show lock overlay
 					// Small delay ensures the view is ready
@@ -467,9 +465,10 @@ export default class LockdownPlugin extends Plugin {
 		await this.saveData(data);
 	}
 
-	async encryptContent(content: string, password: string): Promise<string> {
-		const activeFile = this.app.workspace.getActiveFile();
-		const filePath = activeFile?.path || '';
+	async encryptContent(content: string, password: string, filePath: string): Promise<string> {
+		if (!filePath) {
+			throw new Error('File path is required for encryption');
+		}
 		
 		try {
 			return await this.lockFileUseCase.execute(content, password, filePath);
@@ -478,9 +477,10 @@ export default class LockdownPlugin extends Plugin {
 		}
 	}
 
-	async decryptContent(encryptedContent: string, password: string): Promise<string> {
-		const activeFile = this.app.workspace.getActiveFile();
-		const filePath = activeFile?.path || '';
+	async decryptContent(encryptedContent: string, password: string, filePath: string): Promise<string> {
+		if (!filePath) {
+			throw new Error('File path is required for decryption');
+		}
 		
 		try {
 			return await this.unlockFileUseCase.execute(encryptedContent, password, filePath);
@@ -718,7 +718,7 @@ export default class LockdownPlugin extends Plugin {
 				if (cachedPassword) {
 					try {
 						// Use the improved decryptContent which handles duplicated data
-						content = await this.decryptContent(content, cachedPassword);
+						content = await this.decryptContent(content, cachedPassword, filePath);
 					} catch (e) {
 						new Notice('Failed to decrypt existing content. Please unlock first.');
 						return;
@@ -738,10 +738,10 @@ export default class LockdownPlugin extends Plugin {
 
 				// Encrypt content
 				try {
-					const encryptedContent = await this.encryptContent(content, password);
+					const encryptedContent = await this.encryptContent(content, password, filePath);
 					
 					// SAFETY CHECK: Verify decryption works before writing
-					const verification = await this.decryptContent(encryptedContent, password);
+					const verification = await this.decryptContent(encryptedContent, password, filePath);
 					if (verification !== content) {
 						throw new Error('Encryption verification failed (decrypted content mismatch)');
 					}
@@ -806,8 +806,12 @@ export default class LockdownPlugin extends Plugin {
 			}
 			
 			if (foundView && foundView.file?.path === filePath) {
-				// Clear editor content to hide encrypted data
-				foundView.editor.setValue('');
+				// CRITICAL: We must update the editor to show the encrypted content.
+				// If we don't, Obsidian's auto-save will sync the stale plaintext 
+				// from the editor back to disk, overwriting our encrypted content!
+				// Read the encrypted content we just wrote and set it in the editor.
+				const encryptedOnDisk = await this.app.vault.read(file);
+				foundView.editor.setValue(encryptedOnDisk);
 				
 				// Show lock overlay with multiple attempts to ensure it appears
 				// Sometimes the DOM isn't ready immediately
@@ -829,10 +833,11 @@ export default class LockdownPlugin extends Plugin {
 				setTimeout(showOverlay, 500);
 			}
 			
-			// Small delay before clearing flag to ensure modify event handler sees it
+			// Longer delay before clearing flag to ensure modify event handler sees it
+			// The modify handler has a 300ms delay, so we need to wait longer
 			setTimeout(() => {
 				this.isLocking.delete(filePath);
-			}, 500);
+			}, 1000);
 			
 			new Notice(`File locked: ${filePath.split('/').pop()}`);
 		} catch (error) {
@@ -893,7 +898,7 @@ export default class LockdownPlugin extends Plugin {
 
 				// Decrypt content
 				try {
-					const decryptedContent = await this.decryptContent(content, password);
+					const decryptedContent = await this.decryptContent(content, password, filePath);
 					
 					// Verify decryption succeeded - decrypted content should NOT contain encryption marker
 					if (decryptedContent.includes(ENCRYPTION_MARKER)) {
@@ -1119,7 +1124,7 @@ export default class LockdownPlugin extends Plugin {
 					if (!this.isFileEncrypted(content)) {
 						const password = this.filePasswords.get(filePath);
 						if (password) {
-							const encryptedContent = await this.encryptContent(content, password);
+							const encryptedContent = await this.encryptContent(content, password, filePath);
 							await this.app.vault.modify(file, encryptedContent);
 						}
 					}
@@ -1222,7 +1227,7 @@ export default class LockdownPlugin extends Plugin {
 		}
 
 		try {
-			content = await this.decryptContent(content, oldPassword);
+			content = await this.decryptContent(content, oldPassword, activeFile.path);
 		} catch (error) {
 			new Notice('Incorrect password');
 			return;
@@ -1236,10 +1241,10 @@ export default class LockdownPlugin extends Plugin {
 
 		// Encrypt with new password
 		try {
-			const encryptedContent = await this.encryptContent(content, newPassword);
+			const encryptedContent = await this.encryptContent(content, newPassword, activeFile.path);
 			
 			// Verify encryption works
-			const verification = await this.decryptContent(encryptedContent, newPassword);
+			const verification = await this.decryptContent(encryptedContent, newPassword, activeFile.path);
 			if (verification !== content) {
 				throw new Error('Encryption verification failed');
 			}
@@ -1491,246 +1496,79 @@ export default class LockdownPlugin extends Plugin {
 	createLockdownExtension() {
 		const plugin = this;
 		
-		// Effect to set lock state
-		const setLockedEffect = StateEffect.define<{ locked: boolean; content: string }>();
-		
-		// State field to track lock status and original content
-		const lockdownState = StateField.define<{ locked: boolean; originalContent: string; filePath: string | null }>({
+		// Simple state field that just tracks if this specific editor's file is locked
+		// IMPORTANT: We do NOT store content or try to sync content here
+		// The overlay handles hiding content, and lockFile/unlockFile handle disk operations
+		const lockdownState = StateField.define<{ filePath: string | null }>({
 			create() {
-				return { locked: false, originalContent: '', filePath: null };
+				return { filePath: null };
 			},
-			update(value, tr) {
-				// Check for lock state changes
-				for (const effect of tr.effects) {
-					if (effect.is(setLockedEffect)) {
-						return {
-							locked: effect.value.locked,
-							originalContent: effect.value.content,
-							filePath: effect.value.locked ? plugin.app.workspace.getActiveFile()?.path || null : null
-						};
-					}
-				}
-				
-				// If locked and document changed, prevent the change
-				if (value.locked && tr.docChanged) {
-					const currentContent = tr.newDoc.toString();
-					if (currentContent !== value.originalContent) {
-						// Return transaction that restores original content
-						setTimeout(() => {
-							new Notice('This file is locked and cannot be edited');
-						}, 0);
-						
-						// Return state with restored content
-						return {
-							...value,
-							locked: true
-						};
-					}
-				}
-				
+			update(value) {
+				// State is static - we don't update based on transactions
+				// The file path is set once when the editor is created
 				return value;
 			}
 		});
 
-		// View plugin to update lock state when file changes
+		// View plugin that only checks if the file associated with THIS view is locked
+		// CRITICAL: We must determine the file from the view's context, NOT from getActiveFile()
 		const lockdownViewPlugin = ViewPlugin.fromClass(
 			class {
-				private updateTimeout: number | null = null;
-				private isUpdating = false;
+				private filePath: string | null = null;
 
-			constructor(private view: EditorView) {
-				// Don't update in constructor - let the update() method handle it
-			}
-
-			update(update: ViewUpdate) {
-					// Update lock state when file changes
-					// Use a longer delay to ensure we're outside any update cycle
-					if (this.updateTimeout) {
-						clearTimeout(this.updateTimeout);
-					}
-					this.updateTimeout = window.setTimeout(() => {
-						this.scheduleUpdate(update.view);
-					}, 150);
+				constructor(private view: EditorView) {
+					// Try to determine what file this editor is for
+					// We'll update this when the view updates
 				}
 
-				scheduleUpdate(view: EditorView) {
-					// Use multiple deferrals to ensure we're outside CodeMirror's update cycle
-					requestAnimationFrame(() => {
-						requestAnimationFrame(() => {
-							this.updateLockState(view);
-						});
-					});
-				}
-
-				updateLockState(view: EditorView) {
-					// Prevent concurrent updates
-					if (this.isUpdating) {
-						return;
-					}
-
-					// Check if view is still valid
-					if (!view.dom.isConnected) {
-						return;
-					}
-
-					this.isUpdating = true;
-
-					try {
-						const activeFile = plugin.app.workspace.getActiveFile();
-						if (activeFile && activeFile.extension === 'md') {
-							const isLocked = plugin.isFileLocked(activeFile.path);
-							const state = view.state.field(lockdownState);
-							
-							// Only update if lock status changed or file changed
-							if (state.filePath !== activeFile.path || state.locked !== isLocked) {
-								// Read file content asynchronously but don't wait for it in the update cycle
-								if (isLocked) {
-									// Schedule async read, then update state
-									plugin.app.vault.read(activeFile).then(content => {
-										// Use multiple requestAnimationFrame calls to ensure we're safe
-						requestAnimationFrame(() => {
-							requestAnimationFrame(() => {
-								try {
-									if (!this.view.dom.isConnected) {
-										this.isUpdating = false;
-										return;
-									}
-									
-									this.view.dispatch({
-										effects: setLockedEffect.of({ locked: true, content })
-									});
-									
-									// Restore content if needed (defer this too)
-									requestAnimationFrame(() => {
-										requestAnimationFrame(() => {
-											try {
-												if (!this.view.dom.isConnected) {
-													this.isUpdating = false;
-													return;
-												}
-												
-												const currentContent = this.view.state.doc.toString();
-												if (currentContent !== content) {
-													this.view.dispatch({
-														changes: {
-															from: 0,
-															to: this.view.state.doc.length,
-															insert: content
-														}
-													});
-												}
-												this.isUpdating = false;
-											} catch (error) {
-												console.error('Error updating locked content:', error);
-												this.isUpdating = false;
-											}
-										});
-									});
-								} catch (error) {
-									console.error('Error updating lock state:', error);
-									this.isUpdating = false;
-								}
-											});
-										});
-									}).catch(error => {
-										console.error('Failed to read file for lock state:', error);
-										this.isUpdating = false;
-									});
-								} else {
-									// Not locked - update immediately (synchronously)
-									requestAnimationFrame(() => {
-										requestAnimationFrame(() => {
-											try {
-												if (!this.view.dom.isConnected) {
-													this.isUpdating = false;
-													return;
-												}
-												this.view.dispatch({
-													effects: setLockedEffect.of({ locked: false, content: '' })
-												});
-												this.isUpdating = false;
-											} catch (error) {
-												console.error('Error updating lock state:', error);
-												this.isUpdating = false;
-											}
-										});
-									});
-								}
-							} else {
-								this.isUpdating = false;
-							}
-						} else {
-							const state = this.view.state.field(lockdownState);
-							if (state.locked || state.filePath !== null) {
-								// Defer this dispatch too
-								requestAnimationFrame(() => {
-									requestAnimationFrame(() => {
-										try {
-											if (!this.view.dom.isConnected) {
-												this.isUpdating = false;
-												return;
-											}
-											this.view.dispatch({
-												effects: setLockedEffect.of({ locked: false, content: '' })
-											});
-											this.isUpdating = false;
-										} catch (error) {
-											console.error('Error clearing lock state:', error);
-											this.isUpdating = false;
-										}
-									});
-								});
-							} else {
-								this.isUpdating = false;
-							}
-						}
-					} catch (error) {
-						console.error('Error in updateLockState:', error);
-						this.isUpdating = false;
-					}
+				update(_update: ViewUpdate) {
+					// We intentionally do nothing here that modifies content
+					// The overlay system handles locked file display
+					// This plugin is kept minimal to avoid cross-contamination
 				}
 
 				destroy() {
-					if (this.updateTimeout) {
-						clearTimeout(this.updateTimeout);
-					}
+					// Nothing to clean up
 				}
 			}
 		);
 
-		// Transaction filter to prevent edits on locked files
+		// Transaction filter - simplified to just check the plugin's lock registry
+		// IMPORTANT: We check the file path from the Obsidian view, not from state
 		const lockdownFilter = EditorState.transactionFilter.of((tr) => {
+			// Only intervene if the document is being changed
+			if (!tr.docChanged) {
+				return tr;
+			}
+
 			try {
-				const state = tr.startState.field(lockdownState);
-				if (state.locked && tr.docChanged) {
-					const newContent = tr.newDoc.toString();
-					if (newContent !== state.originalContent && state.originalContent) {
-						// Block the transaction and restore original content
-					// Use requestAnimationFrame to defer the restoration
-					requestAnimationFrame(() => {
-						requestAnimationFrame(() => {
-							try {
-								const _view = tr.startState.field(lockdownState, false);
-								// Actually, we can't access the view here, so just return the blocked transaction
-							} catch (e) {
-								// Ignore
-							}
-						});
-					});
-						
-						return {
-							changes: {
-								from: 0,
-								to: tr.newDoc.length,
-								insert: state.originalContent
-							}
-						};
+				// Get the file path from the active markdown view
+				// This is safe because transaction filters run synchronously during user edits
+				const activeView = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!activeView || !activeView.file) {
+					return tr; // No active view, allow the transaction
+				}
+
+				const filePath = activeView.file.path;
+				
+				// Check if this file is locked
+				if (plugin.isFileLocked(filePath)) {
+					// File is locked - block the edit
+					// Show notice only occasionally to avoid spam
+					const now = Date.now();
+					if (now - plugin._lastLockNotice > 2000) {
+						plugin._lastLockNotice = now;
+						new Notice('This file is locked and cannot be edited');
 					}
+					
+					// Return empty transaction to block the change
+					return [];
 				}
 			} catch (error) {
-				// If there's an error accessing state, just allow the transaction
-				console.error('Error in transaction filter:', error);
+				// If there's an error, allow the transaction to be safe
+				console.error('Error in lockdown transaction filter:', error);
 			}
+			
 			return tr;
 		});
 
