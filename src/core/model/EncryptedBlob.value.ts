@@ -39,7 +39,7 @@ export class EncryptedBlob {
 
 		base64 = base64.trim().replace(/\s+/g, '');
 
-		const doublePaddingPattern = /==([A-Za-z0-9+\/])/g;
+		const doublePaddingPattern = /==([A-Za-z0-9+/])/g;
 		let doubleMatch;
 		let lastMatchIndex = -1;
 
@@ -52,7 +52,7 @@ export class EncryptedBlob {
 		if (lastMatchIndex !== -1) {
 			base64 = base64.substring(0, lastMatchIndex + 2);
 		} else {
-			const singlePaddingPattern = /([A-Za-z0-9+\/])=([A-Za-z0-9+\/])/;
+			const singlePaddingPattern = /([A-Za-z0-9+/])=([A-Za-z0-9+/])/;
 			const singleMatch = base64.match(singlePaddingPattern);
 
 			if (singleMatch && singleMatch.index !== undefined) {
@@ -66,7 +66,7 @@ export class EncryptedBlob {
 
 				if (paddingIndex !== -1) {
 					const actualIndex = searchStart + paddingIndex;
-					if (actualIndex + 1 < base64.length && /[A-Za-z0-9+\/]/.test(base64[actualIndex + 1])) {
+					if (actualIndex + 1 < base64.length && /[A-Za-z0-9+/]/.test(base64[actualIndex + 1])) {
 						base64 = base64.substring(0, actualIndex + 1);
 					}
 				}
@@ -77,7 +77,7 @@ export class EncryptedBlob {
 			throw new ValidationError('No base64 data found');
 		}
 
-		if (!/^[A-Za-z0-9+\/]+={0,2}$/.test(base64)) {
+		if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
 			throw new ValidationError('Invalid base64 format: contains invalid characters');
 		}
 
