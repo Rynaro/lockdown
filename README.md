@@ -1,6 +1,9 @@
 <div align="center">
 
-# 🔒 Lockdown
+<img width="240" height="240" alt="image" src="https://github.com/user-attachments/assets/a1eb2a71-9a12-4b42-a1ef-64dd298314b4" />
+
+
+# Lockdown
 
 **Lock your markDown files in Obsidian**
 
