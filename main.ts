@@ -62,7 +62,7 @@ export default class LockdownPlugin extends Plugin {
 	private isUnlocking = false;
 	private isLocking: Set<string> = new Set();
 	private activeLeafChangeTimeout: number | null = null;
-	private _lastLockNotice: number = 0;
+	private _lastLockNotice = 0;
 
 	private encryptionService: EncryptionService;
 	private lockFileUseCase: LockFileUseCase;
@@ -289,8 +289,8 @@ export default class LockdownPlugin extends Plugin {
 													await this.app.vault.modify(file, encryptedContent);
 												}
 											});
-										} catch (error) {
-											console.error('Failed to re-encrypt file:', error);
+										} catch {
+										// Failed to re-encrypt - user will need to manually re-lock
 										}
 									}
 								}
@@ -413,7 +413,6 @@ export default class LockdownPlugin extends Plugin {
 			callback: () => this.unlockCurrentFolder(),
 		});
 
-		console.log('Lockdown plugin loaded');
 	}
 
 	onunload() {
@@ -433,7 +432,6 @@ export default class LockdownPlugin extends Plugin {
 		
 		// Remove file explorer indicators
 		this.removeAllFileExplorerIndicators();
-		console.log('Lockdown plugin unloaded');
 	}
 
 	async loadSettings() {
@@ -749,11 +747,10 @@ export default class LockdownPlugin extends Plugin {
 					// Verify encrypted content doesn't contain duplicates
 					// Count occurrences of the base64 part (without header)
 					const base64Part = encryptedContent.replace(ENCRYPTION_HEADER, '').trim();
-					const base64Matches = base64Part.match(/[A-Za-z0-9+\/]+={0,2}/g);
+					const base64Matches = base64Part.match(/[A-Za-z0-9+/]+={0,2}/g);
 					if (base64Matches && base64Matches.length > 1) {
-						// Multiple base64 blocks detected - this shouldn't happen
-						console.warn('Warning: Encrypted content appears to contain duplicates');
-					}
+					// Multiple base64 blocks detected - this shouldn't happen (silent)
+								}
 
 					// Write encrypted content only after verification
 					await this.app.vault.modify(file, encryptedContent);
@@ -761,7 +758,6 @@ export default class LockdownPlugin extends Plugin {
 					// Verify what was written matches what we intended
 					const writtenContent = await this.app.vault.read(file);
 					if (writtenContent !== encryptedContent) {
-						console.warn('Warning: Written content differs from intended encrypted content');
 						// Try to fix it by writing again
 						await this.app.vault.modify(file, encryptedContent);
 					}
@@ -773,8 +769,8 @@ export default class LockdownPlugin extends Plugin {
 					// Cache password in memory (will be cleared on unlock)
 					this.filePasswords.set(filePath, password);
 				} catch (error) {
-					new Notice(`Failed to encrypt file: ${error.message}. File was NOT modified.`);
-					console.error(error);
+					const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+					new Notice(`Failed to encrypt file: ${errorMessage}. File was NOT modified.`);
 					return;
 				}
 			}
@@ -820,7 +816,6 @@ export default class LockdownPlugin extends Plugin {
 					// Verify overlay was created, if not try again
 					setTimeout(() => {
 						if (!this.lockOverlays.has(filePath)) {
-							console.log('Overlay not found, retrying...');
 							this.showLockOverlay(filePath);
 						}
 					}, 200);
@@ -950,7 +945,6 @@ export default class LockdownPlugin extends Plugin {
 				} catch (error) {
 					const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 					new Notice(`Failed to decrypt: ${errorMsg}`);
-					console.error('Decryption error:', error);
 					return;
 				}
 			} else {
@@ -1128,9 +1122,9 @@ export default class LockdownPlugin extends Plugin {
 							await this.app.vault.modify(file, encryptedContent);
 						}
 					}
-				} catch (error) {
-					console.error('Failed to lock file on timeout:', filePath, error);
-				}
+			} catch {
+				// Failed to lock file on timeout - silent failure
+			}
 			}
 		}
 
@@ -1170,8 +1164,7 @@ export default class LockdownPlugin extends Plugin {
 			// Write backup
 			await this.app.vault.adapter.write(backupPath, content);
 			return backupPath;
-		} catch (error) {
-			console.error('Failed to create backup:', error);
+		} catch {
 			new Notice('Warning: Could not create backup before encryption');
 			return null;
 		}
@@ -1259,8 +1252,8 @@ export default class LockdownPlugin extends Plugin {
 
 			new Notice('Password changed successfully');
 		} catch (error) {
-			new Notice(`Failed to change password: ${error.message}`);
-			console.error(error);
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+			new Notice(`Failed to change password: ${errorMessage}`);
 		}
 	}
 
@@ -1298,9 +1291,8 @@ export default class LockdownPlugin extends Plugin {
 			try {
 				await this.unlockFile(filePath);
 				successCount++;
-			} catch (error) {
+			} catch {
 				failCount++;
-				console.error(`Failed to unlock ${filePath}:`, error);
 			}
 		}
 
@@ -1309,9 +1301,8 @@ export default class LockdownPlugin extends Plugin {
 			try {
 				await this.unlockFolder(folderPath);
 				successCount++;
-			} catch (error) {
+			} catch {
 				failCount++;
-				console.error(`Failed to unlock folder ${folderPath}:`, error);
 			}
 		}
 
@@ -1365,9 +1356,8 @@ export default class LockdownPlugin extends Plugin {
 			try {
 				await this.lockFile(file.path, password);
 				lockedCount++;
-			} catch (error) {
+			} catch {
 				failedCount++;
-				console.error(`Failed to lock file ${file.path}:`, error);
 			}
 		}
 
@@ -1418,9 +1408,8 @@ export default class LockdownPlugin extends Plugin {
 			try {
 				await this.unlockFile(file.path, password);
 				unlockedCount++;
-			} catch (error) {
+			} catch {
 				failedCount++;
-				console.error(`Failed to unlock file ${file.path}:`, error);
 			}
 		}
 
@@ -1494,6 +1483,7 @@ export default class LockdownPlugin extends Plugin {
 	}
 
 	createLockdownExtension() {
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const plugin = this;
 		
 		// Simple state field that just tracks if this specific editor's file is locked
@@ -1564,9 +1554,8 @@ export default class LockdownPlugin extends Plugin {
 					// Return empty transaction to block the change
 					return [];
 				}
-			} catch (error) {
+			} catch {
 				// If there's an error, allow the transaction to be safe
-				console.error('Error in lockdown transaction filter:', error);
 			}
 			
 			return tr;
