@@ -15,7 +15,7 @@ An early release of Lockdown for Obsidian - architecture and features are still 
 
 #### Core Security
 - **AES-256-GCM Encryption** - Military-grade encryption for your sensitive notes
-- **PBKDF2 Key Derivation** - 100,000 iterations for maximum password security
+- **PBKDF2-SHA512 Key Derivation** - 1,000,000 iterations for maximum password security
 - **Individual File Locking** - Lock any note with a unique password
 - **Folder Locking** - Protect entire folders at once
 - **Root Password Support** - Use one master password for all files
@@ -47,7 +47,7 @@ An early release of Lockdown for Obsidian - architecture and features are still 
 
 ### 🔐 Security Features
 - Zero plain-text password storage
-- Secure password hashing (SHA-256)
+- Secure password hashing (SHA-512)
 - Memory-only root password cache
 - Encrypted content markers
 - Verification before writing encrypted data
