@@ -5,7 +5,7 @@
 
 # Lockdown
 
-**Lock your markDown files in Obsidian**
+**Lock your Markdown files in Obsidian**
 
 *Military-grade encryption meets beautiful UX*
 
@@ -29,24 +29,18 @@ Secure your sensitive notes with **AES-256-GCM encryption**. Perfect for journal
 
 ## Installation
 
-### Coming Soon: Community Plugin
+### From Community Plugins (Recommended)
 
-Lockdown is currently **under review** by the Obsidian team for inclusion in the official Community Plugins directory. Once approved, you'll be able to install it directly from within Obsidian.
+1. Open **Settings** → **Community Plugins**
+2. Click **Browse** and search for "Lockdown"
+3. Click **Install**, then **Enable**
 
-**Coming soon to Community Plugins!**
-
-### Manual Installation (Current Method)
-
-Lockdown is **fully functional and ready to use** via manual installation. Here's how:
+### Manual Installation
 
 1. **Download** the latest release from [GitHub Releases](https://github.com/Rynaro/lockdown/releases)
-2. **Extract** the contents to your vault's `.obsidian/plugins/lockdown/` folder
-   - Create the folder if it doesn't exist
-   - Path should be: `YourVault/.obsidian/plugins/lockdown/`
+2. **Extract** `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/lockdown/` folder
 3. **Reload** Obsidian (Cmd/Ctrl + R or restart the app)
 4. **Enable** the plugin in **Settings** → **Community Plugins** → Enable "Lockdown"
-
-That's it! Manual installation works perfectly and you'll get the same great experience.
 
 ---
 
@@ -82,7 +76,7 @@ All future locks will use this master password.
 
 ### Security
 - **AES-256-GCM** encryption
-- **PBKDF2** key derivation (100k iterations)
+- **PBKDF2-SHA512** key derivation (1M iterations)
 - **Zero plain-text** password storage
 - **Session timeout** for auto-locking
 
@@ -122,7 +116,7 @@ All future locks will use this master password.
 ### Encryption Details
 
 - **Algorithm**: AES-256-GCM
-- **Key Derivation**: PBKDF2-SHA256 (100,000 iterations)
+- **Key Derivation**: PBKDF2-SHA512 (1,000,000 iterations)
 - **Salt**: 128-bit random per file
 - **IV**: 96-bit random per encryption
 
@@ -190,11 +184,11 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 
 ## Roadmap
 
-- [ ] Mobile support (iOS/Android)
 - [ ] Biometric unlock
 - [ ] Sync integration
 - [ ] Custom keyboard shortcuts
 - [ ] Multi-language support
+- [ ] Inline encrypted blocks
 
 ---
 
