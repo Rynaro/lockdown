@@ -10,7 +10,7 @@
 *Military-grade encryption meets beautiful UX*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.15.15-blue.svg)](https://github.com/Rynaro/lockdown/releases)
+[![Version](https://img.shields.io/badge/version-0.15.16-blue.svg)](https://github.com/Rynaro/lockdown/releases)
 
 </div>
 

@@ -1,7 +1,7 @@
 {
 	"id": "lockdown",
 	"name": "Lockdown",
-	"version": "0.15.15",
+	"version": "0.15.16",
 	"minAppVersion": "0.15.0",
 	"description": "Lock your Markdown files - Secure your sensitive notes with military-grade encryption",
 	"author": "Rynaro",
