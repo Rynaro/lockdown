@@ -81,7 +81,7 @@ export default class LockdownPlugin extends Plugin {
 		this.unlockFileUseCase = new UnlockFileUseCase(this.encryptionService);
 		this.sessionVault = new SessionVault(
 			this.settings.sessionTimeoutMinutes,
-			() => this.handleSessionTimeout()
+			() => void this.handleSessionTimeout()
 		);
 		this.passwordStrengthCalculator = new PasswordStrengthCalculator();
 		this.lockRegistry = new LockRegistry();
@@ -108,25 +108,25 @@ export default class LockdownPlugin extends Plugin {
 
 		// Register commands
 		this.addCommand({
-			id: 'lockdown-toggle-lock',
+			id: 'toggle-lock',
 			name: 'Toggle lock on current file',
 			callback: () => this.toggleLock(),
 		});
 
 		this.addCommand({
-			id: 'lockdown-lock',
+			id: 'lock',
 			name: 'Lock current file',
 			callback: () => this.lockCurrentFile(),
 		});
 
 		this.addCommand({
-			id: 'lockdown-unlock',
+			id: 'unlock',
 			name: 'Unlock current file',
 			callback: () => this.unlockCurrentFile(),
 		});
 
 		this.addCommand({
-			id: 'lockdown-set-root-password',
+			id: 'set-root-password',
 			name: 'Set root password',
 			callback: () => this.setRootPassword(),
 		});
@@ -142,9 +142,9 @@ export default class LockdownPlugin extends Plugin {
 							.setIcon(isLocked ? 'unlock' : 'lock')
 							.onClick(() => {
 								if (isLocked) {
-									this.unlockFile(file.path);
+									void this.unlockFile(file.path);
 								} else {
-									this.lockFile(file.path);
+									void this.lockFile(file.path);
 								}
 							});
 					});
@@ -209,7 +209,7 @@ export default class LockdownPlugin extends Plugin {
 					if (this.settings.lockOnClose && this.previousActiveFile && 
 						this.previousActiveFile.extension === 'md' && 
 						!this.isFileLocked(this.previousActiveFile.path)) {
-						this.lockFile(this.previousActiveFile.path);
+						void this.lockFile(this.previousActiveFile.path);
 					}
 					
 					// Update previous active file
@@ -236,7 +236,7 @@ export default class LockdownPlugin extends Plugin {
 
 		// Intercept file saving to re-encrypt locked files
 		this.registerEvent(
-			this.app.vault.on('modify', async (file) => {
+			this.app.vault.on('modify', (file) => {
 				// Skip re-encryption if we're currently unlocking or locking this file
 				if (this.isUnlocking || (file instanceof TFile && this.isLocking.has(file.path))) {
 					return;
@@ -246,7 +246,7 @@ export default class LockdownPlugin extends Plugin {
 					// File was modified - if it's locked and encryption is enabled, re-encrypt it
 					if (this.settings.useEncryption) {
 						// Longer delay to ensure unlock operations complete first
-						setTimeout(async () => {
+						setTimeout(() => {
 							// Triple-check we're not locking/unlocking this file now
 							if (this.isUnlocking || this.isLocking.has(file.path)) {
 								return;
@@ -257,46 +257,48 @@ export default class LockdownPlugin extends Plugin {
 								return;
 							}
 							
-							try {
-								const content = await this.app.vault.read(file);
-								
-								// Only re-encrypt if content is NOT already encrypted
-								// This prevents re-encrypting already encrypted content
-								if (!this.isFileEncrypted(content)) {
-									// File was edited while unlocked, re-encrypt if password is cached
-									const password = this.filePasswords.get(file.path);
-									if (password) {
-										try {
-											const encryptedContent = await this.encryptContent(content, password, file.path);
-											
-											// Verify the encrypted content doesn't already exist in the file
-											// (safety check to prevent duplication)
-											const currentContent = await this.app.vault.read(file);
-											if (currentContent === encryptedContent) {
-												// Already encrypted, skip
-												return;
-											}
-											
-											// Final check - make sure file is still locked
-											if (!this.isFileLocked(file.path)) {
-												return;
-											}
-											
-											// Use requestAnimationFrame to avoid recursion
-											requestAnimationFrame(async () => {
-												// One more check before writing
-												if (!this.isUnlocking && !this.isLocking.has(file.path) && this.isFileLocked(file.path)) {
-													await this.app.vault.modify(file, encryptedContent);
+							void (async () => {
+								try {
+									const content = await this.app.vault.read(file);
+									
+									// Only re-encrypt if content is NOT already encrypted
+									// This prevents re-encrypting already encrypted content
+									if (!this.isFileEncrypted(content)) {
+										// File was edited while unlocked, re-encrypt if password is cached
+										const password = this.filePasswords.get(file.path);
+										if (password) {
+											try {
+												const encryptedContent = await this.encryptContent(content, password, file.path);
+												
+												// Verify the encrypted content doesn't already exist in the file
+												// (safety check to prevent duplication)
+												const currentContent = await this.app.vault.read(file);
+												if (currentContent === encryptedContent) {
+													// Already encrypted, skip
+													return;
 												}
-											});
-										} catch {
-										// Failed to re-encrypt - user will need to manually re-lock
+												
+												// Final check - make sure file is still locked
+												if (!this.isFileLocked(file.path)) {
+													return;
+												}
+												
+												// Use requestAnimationFrame to avoid recursion
+												requestAnimationFrame(() => {
+													// One more check before writing
+													if (!this.isUnlocking && !this.isLocking.has(file.path) && this.isFileLocked(file.path)) {
+														void this.app.vault.modify(file, encryptedContent);
+													}
+												});
+											} catch {
+											// Failed to re-encrypt - user will need to manually re-lock
+											}
 										}
 									}
+								} catch {
+									// File might be in use, ignore
 								}
-							} catch (error) {
-								// File might be in use, ignore
-							}
+							})();
 						}, 300); // Increased delay to give unlock more time
 					}
 				}
@@ -305,7 +307,7 @@ export default class LockdownPlugin extends Plugin {
 
 		// Intercept file opening to show overlay for locked files
 		this.registerEvent(
-			this.app.workspace.on('file-open', async (file) => {
+			this.app.workspace.on('file-open', (file) => {
 				if (file && file instanceof TFile && file.extension === 'md') {
 					// Skip if we're currently unlocking this file (prevents re-showing overlay after unlock)
 					if (this.isUnlocking) {
@@ -380,35 +382,35 @@ export default class LockdownPlugin extends Plugin {
 
 		// Add command for locked files manager
 		this.addCommand({
-			id: 'lockdown-show-locked-files',
+			id: 'show-locked-files',
 			name: 'Show locked files manager',
 			callback: () => this.showLockedFilesManager(),
 		});
 
 		// Add command for changing password
 		this.addCommand({
-			id: 'lockdown-change-password',
+			id: 'change-password',
 			name: 'Change password for current file',
 			callback: () => this.changeFilePassword(),
 		});
 
 		// Add command for bulk unlock
 		this.addCommand({
-			id: 'lockdown-unlock-all',
+			id: 'unlock-all',
 			name: 'Unlock all files',
 			callback: () => this.unlockAllFiles(),
 		});
 
 		// Add command for locking current folder
 		this.addCommand({
-			id: 'lockdown-lock-folder',
+			id: 'lock-folder',
 			name: 'Lock current folder',
 			callback: () => this.lockCurrentFolder(),
 		});
 
 		// Add command for unlocking current folder
 		this.addCommand({
-			id: 'lockdown-unlock-folder',
+			id: 'unlock-folder',
 			name: 'Unlock current folder',
 			callback: () => this.unlockCurrentFolder(),
 		});
@@ -717,7 +719,7 @@ export default class LockdownPlugin extends Plugin {
 					try {
 						// Use the improved decryptContent which handles duplicated data
 						content = await this.decryptContent(content, cachedPassword, filePath);
-					} catch (e) {
+					} catch {
 						new Notice('Failed to decrypt existing content. Please unlock first.');
 						return;
 					}
@@ -983,7 +985,7 @@ export default class LockdownPlugin extends Plugin {
 	async toggleLock() {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile || activeFile.extension !== 'md') {
-			new Notice('Please open a markdown file to lock/unlock');
+			new Notice('Please open a Markdown file to lock/unlock');
 			return;
 		}
 
@@ -997,7 +999,7 @@ export default class LockdownPlugin extends Plugin {
 	async lockCurrentFile() {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile || activeFile.extension !== 'md') {
-			new Notice('Please open a markdown file to lock');
+			new Notice('Please open a Markdown file to lock');
 			return;
 		}
 		await this.lockFile(activeFile.path);
@@ -1006,7 +1008,7 @@ export default class LockdownPlugin extends Plugin {
 	async unlockCurrentFile() {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile || activeFile.extension !== 'md') {
-			new Notice('Please open a markdown file to unlock');
+			new Notice('Please open a Markdown file to unlock');
 			return;
 		}
 		await this.unlockFile(activeFile.path);
@@ -1021,7 +1023,11 @@ export default class LockdownPlugin extends Plugin {
 			this.statusBarEl.textContent = isLocked 
 				? `${this.settings.lockIcon} Locked` 
 				: '';
-			this.statusBarEl.style.cursor = 'pointer';
+			if (isLocked) {
+				this.statusBarEl.addClass('ld-status-bar');
+			} else {
+				this.statusBarEl.removeClass('ld-status-bar');
+			}
 			this.statusBarEl.onclick = () => this.toggleLock();
 		} else {
 			this.statusBarEl.textContent = '';
@@ -1090,7 +1096,7 @@ export default class LockdownPlugin extends Plugin {
 		// Set new timer
 		const timeoutMs = this.settings.sessionTimeoutMinutes * 60 * 1000;
 		this.sessionTimeoutTimer = window.setTimeout(() => {
-			this.handleSessionTimeout();
+			void this.handleSessionTimeout();
 		}, timeoutMs);
 	}
 
@@ -1098,7 +1104,7 @@ export default class LockdownPlugin extends Plugin {
 	 * Handle session timeout - lock all files and clear passwords
 	 */
 	async handleSessionTimeout(): Promise<void> {
-		new Notice('Session timeout: Locking all files and clearing passwords');
+		new Notice('Session timeout: locking all files and clearing passwords');
 
 		// Lock all unlocked files
 		const unlockedFiles: string[] = [];
@@ -1165,7 +1171,7 @@ export default class LockdownPlugin extends Plugin {
 			await this.app.vault.adapter.write(backupPath, content);
 			return backupPath;
 		} catch {
-			new Notice('Warning: Could not create backup before encryption');
+			new Notice('Warning: could not create backup before encryption');
 			return null;
 		}
 	}
@@ -1192,7 +1198,7 @@ export default class LockdownPlugin extends Plugin {
 	async changeFilePassword(): Promise<void> {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile || activeFile.extension !== 'md') {
-			new Notice('Please open a markdown file to change its password');
+			new Notice('Please open a Markdown file to change its password');
 			return;
 		}
 
@@ -1221,7 +1227,7 @@ export default class LockdownPlugin extends Plugin {
 
 		try {
 			content = await this.decryptContent(content, oldPassword, activeFile.path);
-		} catch (error) {
+		} catch {
 			new Notice('Incorrect password');
 			return;
 		}
@@ -1483,7 +1489,7 @@ export default class LockdownPlugin extends Plugin {
 	}
 
 	createLockdownExtension() {
-		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		// eslint-disable-next-line @typescript-eslint/no-this-alias -- Required for CodeMirror extension closure
 		const plugin = this;
 		
 		// Simple state field that just tracks if this specific editor's file is locked
@@ -1603,7 +1609,7 @@ class LockedFilesManagerModal extends Modal {
 		// Title with icon
 		const titleContainer = contentEl.createDiv({ cls: 'lockdown-modal-title-container' });
 		titleContainer.createSpan({ text: '🔐', cls: 'lockdown-modal-icon' });
-		titleContainer.createEl('h2', { text: 'Locked Items Manager', cls: 'lockdown-modal-title' });
+		titleContainer.createEl('h2', { text: 'Locked items manager', cls: 'lockdown-modal-title' });
 
 		const lockedFiles = Array.from(this.plugin.lockedFiles);
 		const lockedFolders = Array.from(this.plugin.lockedFolders);
@@ -1689,7 +1695,7 @@ class LockedFilesManagerModal extends Modal {
 				openBtn.onclick = () => {
 					const file = this.app.vault.getAbstractFileByPath(filePath);
 					if (file instanceof TFile) {
-						this.app.workspace.openLinkText(filePath, '', true);
+						void this.app.workspace.openLinkText(filePath, '', true);
 					}
 				};
 			});
@@ -1792,7 +1798,9 @@ class LockdownSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Lockdown Settings' });
+		new Setting(containerEl)
+			.setName('Lockdown Settings')
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Root password')
