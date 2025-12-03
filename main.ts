@@ -1799,7 +1799,7 @@ class LockdownSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName('Lockdown Settings')
+			.setName('General')
 			.setHeading();
 
 		new Setting(containerEl)
