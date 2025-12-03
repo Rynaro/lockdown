@@ -3,7 +3,7 @@
 	"name": "Lockdown",
 	"version": "0.15.16",
 	"minAppVersion": "0.15.0",
-	"description": "Lock your Markdown files - Secure your sensitive notes with military-grade encryption",
+	"description": "Lock your Markdown files with military-grade AES-256-GCM encryption.",
 	"author": "Rynaro",
 	"authorUrl": "https://hlavezzo.me",
 	"isDesktopOnly": false
