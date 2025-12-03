@@ -78,14 +78,11 @@ export class FileExplorerIndicators {
 				}
 
 					const indicator = document.createElement('span');
-					indicator.className = 'ld-file-explorer-indicator';
+					indicator.className = isEncrypted 
+						? 'ld-file-explorer-indicator ld-file-explorer-indicator--encrypted'
+						: 'ld-file-explorer-indicator';
 					indicator.textContent = lockIcon || '🔒';
 					indicator.title = isEncrypted ? 'Locked and encrypted file' : 'Locked file';
-					indicator.style.marginLeft = '4px';
-					indicator.style.opacity = isEncrypted ? '1' : '0.7';
-					indicator.style.background = 'transparent';
-					indicator.style.backgroundColor = 'transparent';
-					indicator.style.pointerEvents = 'none';
 
 					requestAnimationFrame(() => {
 					const targetEl = titleEl.querySelector('.nav-file-title-content') || titleEl;
@@ -126,11 +123,6 @@ export class FileExplorerIndicators {
 					indicator.className = 'ld-file-explorer-indicator ld-file-explorer-indicator--folder';
 					indicator.textContent = lockIcon || '🔒';
 					indicator.title = 'Locked folder';
-					indicator.style.marginLeft = '4px';
-					indicator.style.opacity = '0.8';
-					indicator.style.background = 'transparent';
-					indicator.style.backgroundColor = 'transparent';
-					indicator.style.pointerEvents = 'none';
 
 					requestAnimationFrame(() => {
 					const targetEl = titleEl.querySelector('.nav-folder-title-content') || titleEl;

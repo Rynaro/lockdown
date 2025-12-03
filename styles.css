@@ -377,6 +377,20 @@
 }
 
 /* ------------------------------------------------------------------------
+   BLOCK: Overlay Container
+   Container styles for overlay positioning
+   ------------------------------------------------------------------------ */
+
+.ld-overlay-container {
+	position: relative;
+}
+
+.ld-overlay-container-isolated {
+	isolation: isolate;
+	will-change: auto;
+}
+
+/* ------------------------------------------------------------------------
    BLOCK: File Explorer Indicators
    Lock icons shown in the file explorer sidebar
    ------------------------------------------------------------------------ */
@@ -407,6 +421,11 @@
 /* Indicator Modifier: Folder */
 .ld-file-explorer-indicator--folder {
 	opacity: 0.8;
+}
+
+/* Indicator Modifier: Encrypted */
+.ld-file-explorer-indicator--encrypted {
+	opacity: 1;
 }
 
 /* Ensure indicators don't affect sidebar background */

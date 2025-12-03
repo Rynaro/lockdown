@@ -32,7 +32,7 @@ export class PasswordPromptModal extends Modal {
 
 		const titleContainer = this.contentEl.createDiv({ cls: 'ld-modal__title-container' });
 		titleContainer.createSpan({ text: '🔐', cls: 'ld-modal__icon' });
-		titleContainer.createEl('h2', { text: 'Password Required', cls: 'ld-modal__title' });
+		titleContainer.createEl('h2', { text: 'Password required', cls: 'ld-modal__title' });
 
 		this.contentEl.createEl('p', { text: this.message, cls: 'ld-modal__message' });
 
@@ -64,7 +64,7 @@ export class PasswordPromptModal extends Modal {
 		if (this.isNewPassword) {
 			const confirmContainer = this.contentEl.createDiv({ cls: 'ld-input-container' });
 			confirmContainer.createEl('label', {
-				text: 'Confirm Password',
+				text: 'Confirm password',
 				attr: { for: 'lockdown-confirm' },
 				cls: 'ld-input__label'
 			});
