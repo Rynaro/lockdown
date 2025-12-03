@@ -5,6 +5,12 @@ All notable changes to Lockdown will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.1] - 2025-12-03
+
+### 🔧 Fixed
+- Fix settings heading: Remove "Settings" word and plugin name, use sentence case
+- Ensure all UI text follows sentence case guidelines
+
 ## [0.16.0] - 2025-12-03
 
 ### 🔧 Fixed
@@ -118,7 +124,8 @@ We use [Semantic Versioning](https://semver.org/):
 
 ---
 
+[0.16.1]: https://github.com/Rynaro/lockdown/releases/tag/0.16.1
 [0.16.0]: https://github.com/Rynaro/lockdown/releases/tag/0.16.0
 [0.15.17]: https://github.com/Rynaro/lockdown/releases/tag/0.15.17
 [0.15.16]: https://github.com/Rynaro/lockdown/releases/tag/0.15.16
-[Unreleased]: https://github.com/Rynaro/lockdown/compare/0.15.17...HEAD
+[Unreleased]: https://github.com/Rynaro/lockdown/compare/0.16.1...HEAD
