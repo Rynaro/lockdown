@@ -5,6 +5,11 @@ All notable changes to Lockdown will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.17] - 2025-12-02
+
+### 🔧 Fixed
+- Update manifest description to match Obsidian plugin submission requirements
+
 ## [0.15.16] - 2025-12-02
 
 ### 🚧 Beta Release
@@ -100,5 +105,6 @@ We use [Semantic Versioning](https://semver.org/):
 
 ---
 
-[0.15.16]: https://github.com/Rynaro/lockdown/releases/tag/v0.15.16
-[Unreleased]: https://github.com/Rynaro/lockdown/compare/v0.15.16...HEAD
+[0.15.17]: https://github.com/Rynaro/lockdown/releases/tag/0.15.17
+[0.15.16]: https://github.com/Rynaro/lockdown/releases/tag/0.15.16
+[Unreleased]: https://github.com/Rynaro/lockdown/compare/0.15.17...HEAD
