@@ -12,10 +12,9 @@ export class LockOverlay {
 		if (container) {
 			const computedStyle = getComputedStyle(container);
 			if (computedStyle.position === 'static') {
-				container.style.position = 'relative';
+				container.addClass('ld-overlay-container');
 			}
-			container.style.isolation = 'isolate';
-			container.style.willChange = 'auto';
+			container.addClass('ld-overlay-container-isolated');
 		}
 
 		const overlay = document.createElement('div');
@@ -45,14 +44,13 @@ export class LockOverlay {
 		this.overlays.set(filePath, overlay);
 	}
 
-	remove(filePath: string): void {
+		remove(filePath: string): void {
 		const overlay = this.overlays.get(filePath);
 		if (overlay) {
 			const container = overlay.parentElement;
 			if (container) {
-				if (container.style.isolation === 'isolate') {
-					container.style.isolation = '';
-				}
+				container.removeClass('ld-overlay-container');
+				container.removeClass('ld-overlay-container-isolated');
 			}
 			overlay.remove();
 			this.overlays.delete(filePath);
@@ -61,8 +59,9 @@ export class LockOverlay {
 		const orphanedOverlays = document.querySelectorAll(`.lockdown-overlay[data-file-path="${filePath}"]`);
 		orphanedOverlays.forEach(el => {
 			const container = el.parentElement;
-			if (container && container.style.isolation === 'isolate') {
-				container.style.isolation = '';
+			if (container) {
+				container.removeClass('ld-overlay-container');
+				container.removeClass('ld-overlay-container-isolated');
 			}
 			el.remove();
 		});
@@ -71,8 +70,9 @@ export class LockOverlay {
 	removeAll(): void {
 		this.overlays.forEach((overlay) => {
 			const container = overlay.parentElement;
-			if (container && container.style.isolation === 'isolate') {
-				container.style.isolation = '';
+			if (container) {
+				container.removeClass('ld-overlay-container');
+				container.removeClass('ld-overlay-container-isolated');
 			}
 			overlay.remove();
 		});
@@ -81,8 +81,9 @@ export class LockOverlay {
 		const allOverlays = document.querySelectorAll('.lockdown-overlay');
 		allOverlays.forEach(el => {
 			const container = el.parentElement;
-			if (container && container.style.isolation === 'isolate') {
-				container.style.isolation = '';
+			if (container) {
+				container.removeClass('ld-overlay-container');
+				container.removeClass('ld-overlay-container-isolated');
 			}
 			el.remove();
 		});
