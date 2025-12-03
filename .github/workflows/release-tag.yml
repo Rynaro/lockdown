@@ -3,7 +3,7 @@ name: Create Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: write
@@ -30,7 +30,7 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Verify version matches manifest
         run: |
@@ -81,7 +81,7 @@ jobs:
 
       - name: Delete existing release if present
         run: |
-          gh release delete v${{ steps.version.outputs.VERSION }} --yes || true
+          gh release delete ${{ steps.version.outputs.VERSION }} --yes || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
