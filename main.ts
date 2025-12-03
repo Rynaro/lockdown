@@ -1799,12 +1799,8 @@ class LockdownSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName('General')
-			.setHeading();
-
-		new Setting(containerEl)
 			.setName('Root password')
-			.setDesc('Set a root password to use for all locked files. This avoids prompting for passwords each time. You can also use the command "Set root password" from the command palette.')
+			.setDesc('Set a root password to use for all locked files. This avoids prompting for passwords each time. You can also use the command "set root password" from the command palette.')
 			.addButton(button => button
 				.setButtonText(this.plugin.settings.rootPasswordHash ? 'Change root password' : 'Set root password')
 				.setCta()
