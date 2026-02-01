@@ -1,4 +1,4 @@
-import { Plugin, PluginSettingTab, Setting, TFile, TFolder, Notice, MarkdownView, Modal, App } from 'obsidian';
+import { Plugin, PluginSettingTab, Setting, TFile, TFolder, TAbstractFile, Notice, MarkdownView, Modal, App } from 'obsidian';
 import { EditorView, ViewUpdate, ViewPlugin } from '@codemirror/view';
 import { StateField } from '@codemirror/state';
 import { EditorState } from '@codemirror/state';
@@ -302,6 +302,20 @@ export default class LockdownPlugin extends Plugin {
 						}, 300); // Increased delay to give unlock more time
 					}
 				}
+			})
+		);
+
+		// Handle file/folder rename (move) to update lock registry
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				this.handleFileRename(file, oldPath);
+			})
+		);
+
+		// Handle file deletion to clean up lock registry
+		this.registerEvent(
+			this.app.vault.on('delete', (file) => {
+				this.handleFileDelete(file);
 			})
 		);
 
@@ -1486,6 +1500,198 @@ export default class LockdownPlugin extends Plugin {
 		}
 
 		await this.unlockFolder(lockedFolderPath);
+	}
+
+	/**
+	 * Handle file or folder rename/move events to update lock registry.
+	 * This ensures locked files maintain their lock status when moved.
+	 */
+	private handleFileRename(file: TAbstractFile, oldPath: string): void {
+		const newPath = file.path;
+
+		if (file instanceof TFile) {
+			// Handle file rename/move
+			if (this.lockedFiles.has(oldPath)) {
+				// Update locked files set
+				this.lockedFiles.delete(oldPath);
+				this.lockedFiles.add(newPath);
+
+				// Update password hash
+				const passwordHash = this.passwordHashes.get(oldPath);
+				if (passwordHash) {
+					this.passwordHashes.delete(oldPath);
+					this.passwordHashes.set(newPath, passwordHash);
+				}
+
+				// Update cached password
+				const cachedPassword = this.filePasswords.get(oldPath);
+				if (cachedPassword) {
+					this.filePasswords.delete(oldPath);
+					this.filePasswords.set(newPath, cachedPassword);
+				}
+
+				// Update lock registry
+				this.lockRegistry.updateFilePath(oldPath, newPath);
+
+				// Save the updated state
+				void this.saveLockedFiles();
+
+				// Update UI
+				this.updateFileExplorerIndicators();
+
+				// If there's an overlay for the old path, update it
+				if (this.lockOverlayManager.has(oldPath)) {
+					this.removeLockOverlay(oldPath);
+					// Show overlay for new path after a short delay to ensure DOM is updated
+					setTimeout(() => {
+						if (this.isFileLocked(newPath)) {
+							this.showLockOverlay(newPath);
+						}
+					}, 100);
+				}
+			}
+		} else if (file instanceof TFolder) {
+			// Handle folder rename/move
+			const oldPrefix = oldPath + '/';
+			const newPrefix = newPath + '/';
+
+			// Update the locked folder itself if it was locked
+			if (this.lockedFolders.has(oldPath)) {
+				this.lockedFolders.delete(oldPath);
+				this.lockedFolders.add(newPath);
+				this.lockRegistry.updateFolderPath(oldPath, newPath);
+			}
+
+			// Update all locked files that were inside the renamed folder
+			const filesToUpdate: Array<{ oldFilePath: string; newFilePath: string }> = [];
+			for (const filePath of this.lockedFiles) {
+				if (filePath.startsWith(oldPrefix)) {
+					const relativePath = filePath.substring(oldPrefix.length);
+					const newFilePath = newPrefix + relativePath;
+					filesToUpdate.push({ oldFilePath: filePath, newFilePath });
+				}
+			}
+
+			for (const { oldFilePath, newFilePath } of filesToUpdate) {
+				// Update locked files set
+				this.lockedFiles.delete(oldFilePath);
+				this.lockedFiles.add(newFilePath);
+
+				// Update password hash
+				const passwordHash = this.passwordHashes.get(oldFilePath);
+				if (passwordHash) {
+					this.passwordHashes.delete(oldFilePath);
+					this.passwordHashes.set(newFilePath, passwordHash);
+				}
+
+				// Update cached password
+				const cachedPassword = this.filePasswords.get(oldFilePath);
+				if (cachedPassword) {
+					this.filePasswords.delete(oldFilePath);
+					this.filePasswords.set(newFilePath, cachedPassword);
+				}
+
+				// Update lock registry
+				this.lockRegistry.updateFilePath(oldFilePath, newFilePath);
+
+				// Update overlays if needed
+				if (this.lockOverlayManager.has(oldFilePath)) {
+					this.removeLockOverlay(oldFilePath);
+				}
+			}
+
+			// Update all locked subfolders
+			const foldersToUpdate: Array<{ oldFolderPath: string; newFolderPath: string }> = [];
+			for (const folderPath of this.lockedFolders) {
+				if (folderPath.startsWith(oldPrefix)) {
+					const relativePath = folderPath.substring(oldPrefix.length);
+					const newFolderPath = newPrefix + relativePath;
+					foldersToUpdate.push({ oldFolderPath: folderPath, newFolderPath });
+				}
+			}
+
+			for (const { oldFolderPath, newFolderPath } of foldersToUpdate) {
+				this.lockedFolders.delete(oldFolderPath);
+				this.lockedFolders.add(newFolderPath);
+				this.lockRegistry.updateFolderPath(oldFolderPath, newFolderPath);
+			}
+
+			// Also update child paths in lock registry
+			this.lockRegistry.updateChildFilePaths(oldPath, newPath);
+			this.lockRegistry.updateChildFolderPaths(oldPath, newPath);
+
+			// Save the updated state
+			void this.saveLockedFiles();
+
+			// Update UI
+			this.updateFileExplorerIndicators();
+		}
+	}
+
+	/**
+	 * Handle file or folder deletion to clean up lock registry.
+	 * This prevents stale entries from accumulating.
+	 */
+	private handleFileDelete(file: TAbstractFile): void {
+		const path = file.path;
+
+		if (file instanceof TFile) {
+			// Clean up file from lock registry
+			if (this.lockedFiles.has(path)) {
+				this.lockedFiles.delete(path);
+				this.passwordHashes.delete(path);
+				this.filePasswords.delete(path);
+				
+				// Remove from lock overlay manager
+				this.removeLockOverlay(path);
+
+				// Save the updated state
+				void this.saveLockedFiles();
+
+				// Update UI
+				this.updateFileExplorerIndicators();
+			}
+		} else if (file instanceof TFolder) {
+			// Clean up folder from lock registry
+			if (this.lockedFolders.has(path)) {
+				this.lockedFolders.delete(path);
+			}
+
+			// Clean up any files that were in the deleted folder
+			const prefix = path + '/';
+			const filesToRemove: string[] = [];
+			
+			for (const filePath of this.lockedFiles) {
+				if (filePath.startsWith(prefix)) {
+					filesToRemove.push(filePath);
+				}
+			}
+
+			for (const filePath of filesToRemove) {
+				this.lockedFiles.delete(filePath);
+				this.passwordHashes.delete(filePath);
+				this.filePasswords.delete(filePath);
+				this.removeLockOverlay(filePath);
+			}
+
+			// Clean up any subfolders that were locked
+			const foldersToRemove: string[] = [];
+			for (const folderPath of this.lockedFolders) {
+				if (folderPath.startsWith(prefix)) {
+					foldersToRemove.push(folderPath);
+				}
+			}
+
+			for (const folderPath of foldersToRemove) {
+				this.lockedFolders.delete(folderPath);
+			}
+
+			// Save the updated state
+			void this.saveLockedFiles();
+
+			// Update UI
+			this.updateFileExplorerIndicators();
+		}
 	}
 
 	createLockdownExtension() {
